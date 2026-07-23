@@ -1,0 +1,55 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Station 36 CHP alert service area",
+        "description": "2 mi west of 14145 Campo Rd; 3 mi east of Dulzura; 7 mi north; southwest taper to the approximate Chula Vista/unincorporated County crossing on Otay Lakes Road.",
+        "boundary_note": "Operational geometry, not a legal district boundary."
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [-116.93154, 32.647464],
+          [-116.89999, 32.6768367],
+          [-116.89999, 32.81273],
+          [-116.72987, 32.81273],
+          [-116.72987, 32.6406052],
+          [-116.93154, 32.647464]
+        ]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Station 36 operational reference",
+        "address": "14145 Campo Rd, Jamul, CA 91935",
+        "coordinate_note": "Operational approximation; verify against agency GIS before treating as authoritative."
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [-116.86563, 32.711277]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {"name": "Dulzura reference"},
+      "geometry": {
+        "type": "Point",
+        "coordinates": [-116.7814093, 32.6442247]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Otay Lakes / Chula Vista operational edge",
+        "description": "Approximate municipal boundary crossing on Otay Lakes Road."
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [-116.93154, 32.647464]
+      }
+    }
+  ]
+}
