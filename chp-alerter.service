@@ -9,7 +9,7 @@ User=chp-alert
 Group=chp-alert
 WorkingDirectory=/opt/chp-alerter
 EnvironmentFile=/etc/chp-alerter.env
-ExecStart=/opt/chp-alerter/.venv/bin/python /opt/chp-alerter/chp_jamul_alert.py
+ExecStart=/opt/chp-alerter/.venv/bin/python /opt/chp-alerter/chp_detail_alert.py
 Restart=on-failure
 RestartSec=10
 
