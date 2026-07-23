@@ -1,0 +1,30 @@
+[Unit]
+Description=CHP Station 36 CAD alert monitor
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=chp-alert
+Group=chp-alert
+WorkingDirectory=/opt/chp-alerter
+EnvironmentFile=/etc/chp-alerter.env
+ExecStart=/opt/chp-alerter/.venv/bin/python /opt/chp-alerter/chp_jamul_alert.py
+Restart=on-failure
+RestartSec=10
+
+StateDirectory=chp-jamul-alert
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+ReadWritePaths=/var/lib/chp-jamul-alert
+
+[Install]
+WantedBy=multi-user.target
