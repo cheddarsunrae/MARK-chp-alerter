@@ -1,166 +1,162 @@
 # CHP Alerter
 
-CHP Alerter polls the public California Highway Patrol CAD page for the **Border Communications Center**, filters incidents to the Station 36 operational service area, and sends qualifying incidents through **Pushover emergency alerts**.
-
-It is intended to provide earlier situational awareness when CHP publishes a relevant incident before the local fire dispatch path reaches the station.
+CHP Alerter polls the public California Highway Patrol CAD page, filters incidents to **a specified service area**, retrieves the associated incident-detail updates, and sends qualifying incidents through Pushover.
 
 > **Supplemental awareness only.** This is not an official CAD terminal, station alerting system, pager, radio, or replacement for agency dispatch. Public webpages, geocoding, networks, and third-party push services can fail or change.
 
-## Alert criteria
+The repository includes a Station 36/Jamul sample configuration, but the monitor and desktop interface are designed so other stations can select or create their own GeoJSON service-area file.
 
-An incident must satisfy both conditions:
+## Current alert logic
 
-1. CHP call type is exactly one of:
-   - `Trfc Collision-1141Enrt`
-   - `Trfc Collision-Unkn Inj`
-   - `Report of Fire`
-2. The location matches the configured operational area through explicit Jamul/Dulzura text, coordinates, or geocoding.
+Normal alerts require both a geographic match and one of these CHP call types:
 
-Current operational geometry:
+- `Trfc Collision-1141Enrt`
+- `Trfc Collision-Unkn Inj`
+- `Report of Fire`
 
-- Station reference: `14145 Campo Rd, Jamul, CA 91935`
-- Approximately 2 miles west of the station
-- Approximately 7 miles north of the station
-- Approximately 3 miles east of Dulzura
-- Southwest taper to the Otay Lakes Road / Chula Vista operational edge
+Incident details are fetched through the CHP ASP.NET `gvIncidents / Select$n` postback. Detail codes `11-78`, `11-79`, `11-80`, and `11-81` can promote another call type into the normal geographically filtered alert path. `11-82` is logged but does not yet send its future separate alert category.
 
-The polygon is operational geometry, not a legal district boundary.
+Rows with `AREA` containing Oceanside or Temecula are discarded before a detail request is made.
 
-## Features
+## Cross-platform desktop interface
 
-- Polls CHP about every 65 seconds.
-- Selects Border Communications Center directly.
-- Deduplicates incidents across restarts.
-- Primes already-active incidents without alerting on first startup by default.
-- Optionally alerts when a relevant incident changes.
-- Uses cached and rate-limited Nominatim geocoding for ambiguous intersections.
-- Sends Pushover priority-2 emergency alerts with retry and expiry.
-- Includes a manual `--test-pushover` command that does not poll CHP.
-- Includes a hardened systemd service.
+The same Tkinter interface runs on Windows and Fedora/Linux. It provides:
 
-## Requirements
+- Start and stop controls
+- Pushover testing
+- One-poll dry runs
+- Live logs and poll summaries
+- Configuration editing and reload
+- Service-area GeoJSON selection, validation, and reload
+- A polygon map editor
+- Windows and Linux launchers
 
-- Linux
-- Python 3.10 or newer
-- Internet access to CHP CAD, Pushover, and optionally Nominatim
-- Pushover user key and application API token
+The backend reads the service-area map when it starts. **Reload Map** validates and saves the selected file, then offers to restart a running monitor so the new boundary takes effect.
 
-## Local installation
+## Windows quick start
 
-```bash
-git clone https://github.com/cheddarsunrae/chp-alerter.git
-cd chp-alerter
-python3 -m venv .venv
-. .venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
-cp .env.example .env
-chmod 600 .env
+From PowerShell:
+
+```powershell
+cd C:\Users\Shane\Documents\GitHub\chp-alerter
+git pull
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\start-chp-alerter.ps1
 ```
 
-Edit `.env` and set:
+The launcher creates `.venv`, installs dependencies, creates `.env` from `.env.example` when needed, and starts the GUI.
+
+## Fedora quick start
+
+Install Python and Tkinter once:
+
+```bash
+sudo dnf install -y python3 python3-tkinter
+```
+
+Then:
+
+```bash
+cd /path/to/chp-alerter
+git pull
+chmod +x start-chp-alerter.sh
+./start-chp-alerter.sh
+```
+
+## Required configuration
+
+Enter these values in the GUI's **Configuration** tab:
 
 ```dotenv
-CHP_ALERT_GEOCODER=nominatim
 CHP_ALERT_CONTACT=mailto:you@example.com
 PUSHOVER_APP_TOKEN=your_application_api_token
-PUSHOVER_USER_KEY=your_user_key
+PUSHOVER_USER_KEY=your_user_or_group_key
 ```
 
-Load the environment:
-
-```bash
-set -a
-. ./.env
-set +a
-```
-
-## Test Pushover
-
-Send a test without polling CHP:
-
-```bash
-python chp_jamul_alert.py --test-pushover
-```
-
-Default emergency profile:
+The default emergency profile is:
 
 ```dotenv
 PUSHOVER_PRIORITY=2
 PUSHOVER_RETRY_SECONDS=30
 PUSHOVER_EXPIRE_SECONDS=1800
-PUSHOVER_SOUND=siren
+PUSHOVER_SOUND=alien
 ```
 
-Priority 2 repeats until acknowledged or expired. A quieter one-time setup test can be sent with:
+`alien`, `climb`, `echo`, `updown`, and `persistent` are the longer built-in Pushover choices exposed by the interface.
 
-```bash
-python chp_jamul_alert.py --test-pushover --pushover-priority 0
-```
+## Service-area files
 
-## Dry-run CHP polling
-
-Fetch and classify current incidents without sending notifications:
-
-```bash
-python chp_jamul_alert.py --once --dry-run --alert-existing
-```
-
-Run continuously in the foreground:
-
-```bash
-python chp_jamul_alert.py
-```
-
-## Production systemd installation
-
-Create a restricted service account:
-
-```bash
-sudo useradd --system --home-dir /var/lib/chp-jamul-alert \
-  --create-home --shell /usr/sbin/nologin chp-alert
-```
-
-On Fedora, use `/sbin/nologin` if `/usr/sbin/nologin` is absent.
-
-Install the application:
-
-```bash
-sudo mkdir -p /opt/chp-alerter
-sudo cp chp_jamul_alert.py requirements.txt service_area.geojson /opt/chp-alerter/
-sudo python3 -m venv /opt/chp-alerter/.venv
-sudo /opt/chp-alerter/.venv/bin/python -m pip install --upgrade pip
-sudo /opt/chp-alerter/.venv/bin/python -m pip install -r /opt/chp-alerter/requirements.txt
-sudo chown -R root:root /opt/chp-alerter
-sudo chmod 755 /opt/chp-alerter/chp_jamul_alert.py
-```
-
-Install the protected configuration:
-
-```bash
-sudo cp .env.example /etc/chp-alerter.env
-sudo chmod 600 /etc/chp-alerter.env
-sudo chown root:root /etc/chp-alerter.env
-sudoedit /etc/chp-alerter.env
-```
-
-Required values:
+The active map is configured with:
 
 ```dotenv
-CHP_ALERT_GEOCODER=nominatim
-CHP_ALERT_CONTACT=mailto:you@example.com
-PUSHOVER_APP_TOKEN=your_application_api_token
-PUSHOVER_USER_KEY=your_user_key
+CHP_ALERT_SERVICE_AREA_FILE=service_area.geojson
 ```
 
-Test Pushover using systemd's environment-file support:
+The file must be valid GeoJSON containing at least one Polygon feature. Point features may be included as operational references. Standard GeoJSON coordinate order is:
+
+```text
+[longitude, latitude]
+```
+
+The supplied `service_area.geojson` is a sample operational polygon, not a legal district boundary.
+
+### Map editor
+
+Press **Edit Map** in the desktop interface.
+
+- Drag a red vertex to move it.
+- Double-click near an edge to insert a vertex.
+- Right-click a vertex to remove it.
+- Use **Save As** to create separate maps for coworkers or stations.
+- Use **Reload Map** in the controller after saving.
+
+The editor validates the resulting GeoJSON before replacing the selected file. It is a coordinate editor, not yet a full online street-tile GIS editor.
+
+## Command-line operation
+
+The map-aware backend entry point is:
+
+```text
+chp_crossplatform.py
+```
+
+Test Pushover:
 
 ```bash
-sudo systemd-run --wait --pipe \
-  --property=EnvironmentFile=/etc/chp-alerter.env \
-  --uid=chp-alert \
-  /opt/chp-alerter/.venv/bin/python \
-  /opt/chp-alerter/chp_jamul_alert.py --test-pushover
+python chp_crossplatform.py --test-pushover
+```
+
+One safe poll without sending incident notifications:
+
+```bash
+python chp_crossplatform.py --once --dry-run --alert-existing --log-level DEBUG
+```
+
+Continuous foreground operation:
+
+```bash
+python chp_crossplatform.py
+```
+
+## Fedora/systemd installation
+
+Install these application files in `/opt/chp-alerter`:
+
+```text
+chp_crossplatform.py
+chp_detail_alert.py
+chp_jamul_alert.py
+service_area_runtime.py
+service_area.geojson
+requirements.txt
+```
+
+Set production paths in `/etc/chp-alerter.env`:
+
+```dotenv
+CHP_ALERT_STATE_FILE=/var/lib/chp-jamul-alert/state.json
+CHP_ALERT_DETAIL_LOG_FILE=/var/lib/chp-jamul-alert/details.jsonl
+CHP_ALERT_SERVICE_AREA_FILE=/opt/chp-alerter/service_area.geojson
 ```
 
 Install and start the service:
@@ -169,115 +165,22 @@ Install and start the service:
 sudo cp chp-alerter.service /etc/systemd/system/chp-alerter.service
 sudo systemctl daemon-reload
 sudo systemctl enable --now chp-alerter.service
-```
-
-Verify:
-
-```bash
-sudo systemctl status chp-alerter.service
 sudo journalctl -u chp-alerter.service -f
 ```
 
-## Configuration
+## Important files
 
-| Variable | Default | Purpose |
-|---|---:|---|
-| `CHP_ALERT_INTERVAL` | `65` | Poll interval; values below 60 are rejected. |
-| `CHP_ALERT_TIMEOUT` | `20` | HTTP timeout in seconds. |
-| `CHP_ALERT_STATE_FILE` | user-local path | Persistent deduplication state. Production uses `/var/lib/chp-jamul-alert/state.json`. |
-| `CHP_ALERT_RETENTION_HOURS` | `72` | Retain unseen incident state this long. |
-| `CHP_ALERT_GEOCODER` | `none` | `none` or `nominatim`. |
-| `CHP_ALERT_CONTACT` | blank | Identifying contact required for Nominatim. |
-| `CHP_ALERT_EXISTING` | `0` | Alert for already-active incidents on first launch. Normally leave off. |
-| `CHP_ALERT_UPDATES` | `0` | Alert again when a relevant incident row changes. |
-| `CHP_ALERT_LOG_LEVEL` | `INFO` | `DEBUG`, `INFO`, `WARNING`, or `ERROR`. |
-| `PUSHOVER_APP_TOKEN` | blank | Pushover application token. |
-| `PUSHOVER_USER_KEY` | blank | Pushover recipient user/group key. |
-| `PUSHOVER_PRIORITY` | `2` | Emergency priority. |
-| `PUSHOVER_RETRY_SECONDS` | `30` | Retry interval for priority 2. |
-| `PUSHOVER_EXPIRE_SECONDS` | `1800` | Stop retrying after this many seconds. |
-| `PUSHOVER_SOUND` | `siren` | Pushover sound name. |
+- `chp_crossplatform.py` — map-aware production entry point
+- `chp_detail_alert.py` — incident details and 11-code handling
+- `chp_jamul_alert.py` — CHP polling, geocoding, state, and Pushover core
+- `chp_gui_crossplatform.py` — Windows/Fedora desktop controller
+- `service_area_editor.py` — GeoJSON polygon editor
+- `service_area_runtime.py` — map validation and runtime loader
+- `service_area.geojson` — supplied sample service area
+- `start-chp-alerter.ps1` — Windows launcher
+- `start-chp-alerter.sh` — Fedora/Linux launcher
+- `chp-alerter.service` — hardened Linux systemd service
 
-Command-line arguments override environment values.
+## Security
 
-## Pushover phone setup
-
-1. Install Pushover and sign in.
-2. Copy the account **User Key**.
-3. Create an application/API token named `CHP Alerter`.
-4. Put both values in `/etc/chp-alerter.env` or local `.env`.
-5. Run `--test-pushover`.
-6. Confirm the emergency alert sounds and can be acknowledged.
-7. Allow Pushover through phone Do Not Disturb and verify its notification channel can make sound.
-
-A correctly delivered alert can still be silenced by phone-level DND, Bluetooth routing, or notification volume. Technology remains committed to being technically correct at the least useful moment.
-
-## Updating
-
-```bash
-cd /path/to/chp-alerter
-git pull
-sudo cp chp_jamul_alert.py service_area.geojson /opt/chp-alerter/
-sudo systemctl restart chp-alerter.service
-sudo journalctl -u chp-alerter.service -n 50 --no-pager
-```
-
-If dependencies changed:
-
-```bash
-sudo cp requirements.txt /opt/chp-alerter/
-sudo /opt/chp-alerter/.venv/bin/python -m pip install -r /opt/chp-alerter/requirements.txt
-sudo systemctl restart chp-alerter.service
-```
-
-## State and reset
-
-State is stored at the configured `CHP_ALERT_STATE_FILE`. To inspect it:
-
-```bash
-sudo python3 -m json.tool /var/lib/chp-jamul-alert/state.json | less
-```
-
-To deliberately reset deduplication:
-
-```bash
-sudo systemctl stop chp-alerter.service
-sudo cp /var/lib/chp-jamul-alert/state.json /var/lib/chp-jamul-alert/state.json.backup
-sudo rm /var/lib/chp-jamul-alert/state.json
-sudo systemctl start chp-alerter.service
-```
-
-The next start primes currently active incidents without alerting unless `CHP_ALERT_EXISTING=1`.
-
-## Troubleshooting
-
-### Pushover test fails
-
-Confirm both credentials are present and not reversed. Do not paste their values into issues or chat.
-
-### Alert arrives silently
-
-- Confirm priority 2 and a valid sound.
-- Allow Pushover through DND.
-- Check Pushover quiet hours.
-- Check notification volume and Bluetooth output.
-
-### Service exits immediately
-
-```bash
-sudo journalctl -u chp-alerter.service -n 100 --no-pager
-```
-
-Common causes: missing environment file, only one Pushover credential, invalid priority-2 retry/expiry, or Nominatim enabled without `CHP_ALERT_CONTACT`.
-
-### Relevant road does not match
-
-Roads may continue outside the polygon, so most road-name-only incidents require geocoding. Enable Nominatim and inspect logs at `DEBUG` level.
-
-## Repository files
-
-- `chp_jamul_alert.py` — monitor, filtering, deduplication, geocoding, and Pushover delivery
-- `service_area.geojson` — operational service-area polygon
-- `chp-alerter.service` — hardened systemd unit
-- `.env.example` — configuration template without credentials
-- `requirements.txt` — Python dependencies
+Never commit `.env`, Pushover credentials, or recipient keys. The repository's `.gitignore` excludes local configuration and runtime state.
