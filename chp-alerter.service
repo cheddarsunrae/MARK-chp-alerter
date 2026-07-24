@@ -1,5 +1,5 @@
 [Unit]
-Description=CHP Station 36 CAD alert monitor
+Description=CHP CAD alert monitor for a specified service area
 Wants=network-online.target
 After=network-online.target
 
@@ -9,7 +9,7 @@ User=chp-alert
 Group=chp-alert
 WorkingDirectory=/opt/chp-alerter
 EnvironmentFile=/etc/chp-alerter.env
-ExecStart=/opt/chp-alerter/.venv/bin/python /opt/chp-alerter/chp_detail_alert.py
+ExecStart=/opt/chp-alerter/.venv/bin/python /opt/chp-alerter/chp_crossplatform.py
 Restart=on-failure
 RestartSec=10
 
