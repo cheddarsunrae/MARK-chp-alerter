@@ -1,9 +1,9 @@
-"""Load the configured service-area polygon before CHP Alerter starts.
+"""Apply MARK runtime policy and the configured service-area polygon at startup.
 
 Python imports ``sitecustomize`` automatically when this repository/application
-folder is on ``sys.path``.  This keeps the runtime geofence synchronized with the
-GeoJSON edited or reloaded through the desktop interface without duplicating
-polygon coordinates in multiple programs.
+folder is on ``sys.path``. This keeps the runtime geofence synchronized with the
+GeoJSON edited through the desktop interface and applies MARK's 30-second
+minimum polling policy without duplicating the monitor implementation.
 """
 
 from __future__ import annotations
@@ -12,6 +12,8 @@ import json
 import os
 from pathlib import Path
 from typing import Any
+
+MINIMUM_POLL_INTERVAL_SECONDS = 30.0
 
 
 def _service_area_path() -> Path:
@@ -61,19 +63,37 @@ def _read_polygon(path: Path) -> tuple[tuple[float, float], ...]:
 
 
 def _apply() -> None:
-    path = _service_area_path()
-    if not path.exists():
-        return
-    polygon = _read_polygon(path)
-
-    # Importing the core here is intentional: later imports receive this same
-    # module object with the authoritative polygon already installed.
     import chp_jamul_alert as core
 
-    core.SERVICE_AREA_POLYGON = polygon
+    # Make 30 seconds the backend default and minimum while preserving every
+    # other argument validation performed by the original monitor.
+    core.DEFAULT_INTERVAL = MINIMUM_POLL_INTERVAL_SECONDS
+    original_validate_args = core.validate_args
+
+    def validate_args_with_mark_policy(args: Any) -> None:
+        if args.interval < MINIMUM_POLL_INTERVAL_SECONDS:
+            raise SystemExit(
+                f"--interval must be at least {int(MINIMUM_POLL_INTERVAL_SECONDS)} seconds"
+            )
+        original_interval = args.interval
+        if original_interval < 60:
+            args.interval = 60
+        try:
+            original_validate_args(args)
+        finally:
+            args.interval = original_interval
+
+    core.validate_args = validate_args_with_mark_policy
+
+    path = _service_area_path()
+    if path.exists():
+        core.SERVICE_AREA_POLYGON = _read_polygon(path)
 
 
 try:
     _apply()
 except Exception as exc:  # Startup must remain diagnosable rather than bricked.
-    print(f"CHP Alerter warning: could not load service-area map: {exc}", file=__import__("sys").stderr)
+    print(
+        f"MARK warning: could not apply startup configuration: {exc}",
+        file=__import__("sys").stderr,
+    )
