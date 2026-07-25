@@ -1,8 +1,12 @@
 # MARK — Map-Aware Roadway Knowledge
 
-MARK polls the public California Highway Patrol Border Communications Center CAD page, performs a fast first-pass listing filter, retrieves selected-call details, confirms location from the detail-header latitude/longitude, checks the active GeoJSON service-area polygon, and sends qualifying incidents through Pushover.
+MARK polls the public California Highway Patrol Border Communications Center CAD page, performs a fast first-pass listing filter, retrieves each selected call through CHP's ASP.NET GridView postback, confirms location from the CAD-supplied `Lat/Lon:` value, checks the active GeoJSON service-area polygon, and sends qualifying incidents through Pushover.
 
 > **Supplemental awareness only.** MARK is not an official CAD terminal, station alerting system, pager, radio, or replacement for agency dispatch. Public webpages, networks, and third-party push services can fail or change.
+
+## Current accepted status
+
+The Windows application is launching and polling successfully. The final live defect was resolved by reproducing the complete browser form submission for CHP detail selection. The monitor now receives the selected incident panel instead of the incident listing again.
 
 ## Fast filtering pipeline
 
@@ -12,13 +16,7 @@ MARK avoids fetching details for every CHP row.
 
 Only the first two characters of the CHP `AREA` value are compared, case-insensitively.
 
-Known values:
-
-- `San Diego`
-- `Temecula`
-- `Oceanside`
-- `El Cajon`
-- `BC`
+Known values are `San Diego`, `Temecula`, `Oceanside`, `El Cajon`, and `BC`.
 
 Station 36 defaults:
 
@@ -36,26 +34,27 @@ MARK searches the CHP `Type` column for case-insensitive substrings instead of e
 CHP_ALERT_TYPE_FRAGMENTS=Unk,1140,1141,Min,Maj,1179,1180,1178,un w,Repo
 ```
 
-Examples:
+### Browser-faithful detail retrieval
 
-- `Unk` matches unknown-injury wording.
-- `1141` matches `Trfc Collision-1141 Enrt` variants.
-- `Min` and `Maj` match minor/major wording.
-- `Repo` matches `Report of Fire`.
+For each retained listing row, `mark_postback_runtime.py`:
 
-### Detail-header coordinate confirmation
+1. reads the form's actual `action` URL;
+2. collects all successful `input`, `select`, and `textarea` controls;
+3. preserves the selected communications center and dropdown values;
+4. submits the GridView `__EVENTTARGET` and `Select$n` argument;
+5. receives the selected incident detail response.
 
-For retained rows, MARK fetches the selected CHP detail postback. The selected call’s detail header contains latitude/longitude; MARK treats those coordinates as authoritative and checks them against the active service-area polygon.
+Submitting only ASP.NET hidden fields returns the listing again and is not sufficient.
 
-Nominatim is fallback-only when detail coordinates are unavailable.
+### CAD coordinate confirmation
+
+The selected call's detail header contains `Lat/Lon:`. MARK treats that CAD-supplied coordinate as authoritative and checks it directly against the service-area polygon. Address geocoding is not part of MARK's active decision path.
 
 ## Detail parsing and alerts
 
-CHP detail responses may contain both the selected incident and the complete all-incidents listing. `mark_detail_runtime.py` rejects ordinary listing rows and retains only the selected call’s coordinate header and genuine CAD/operator notes.
+CHP detail responses may contain the selected incident panel together with the complete all-incidents table. `mark_detail_runtime.py` rejects ordinary listing rows and retains the selected call's canonical coordinate line and genuine CAD/operator notes.
 
 Detail codes `11-78`, `11-79`, `11-80`, and `11-81` remain alert-promoting codes. `11-82` is logged but does not currently create its own alert category.
-
-Alerts include all successfully retrieved notes for the selected incident.
 
 ## Windows quick start
 
@@ -66,13 +65,9 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 .\start-chp-alerter.ps1
 ```
 
-The launcher creates `.venv`, installs dependencies, creates `.env` from `.env.example` when needed, syntax-checks the GUI files, and starts MARK.
+The launcher creates `.venv`, installs dependencies, creates `.env` from `.env.example` when needed, performs syntax checks, and starts MARK.
 
-Hidden GUI startup failures are written to:
-
-```text
-runtime\mark-gui-error.log
-```
+Hidden GUI startup failures are written to `runtime\mark-gui-error.log`.
 
 ## Fedora quick start
 
@@ -102,19 +97,11 @@ profiles/profiles.json
 profiles/maps/
 ```
 
-A running backend must be restarted after loading or changing a profile.
+Restart a running backend after loading or changing a profile.
 
 ## Map editor
 
-### Load a map
-
-Use **Configuration → Service Area File → …** and select a `.geojson` or `.json` file containing a Polygon.
-
-GeoJSON coordinate order is:
-
-```text
-[longitude, latitude]
-```
+Use **Configuration → Service Area File → …** to load a `.geojson` or `.json` Polygon. GeoJSON uses `[longitude, latitude]`; MARK internally uses `(latitude, longitude)`.
 
 ### Extend a zone
 
@@ -123,7 +110,7 @@ GeoJSON coordinate order is:
 3. Click **Start Extension**.
 4. Add at least two clicks.
 5. Click **Finish Extension**.
-6. MARK replaces the last temporary click with the nearest pre-existing waypoint and replaces the shorter old boundary path.
+6. MARK replaces the final temporary click with the nearest existing waypoint and replaces the shorter old boundary path.
 
 ### Simplify a boundary
 
@@ -142,8 +129,6 @@ CHP_ALERT_SERVICE_AREA_FILE=service_area.geojson
 CHP_ALERT_PROFILE=
 CHP_ALERT_AREA_PREFIXES=BC,El
 CHP_ALERT_TYPE_FRAGMENTS=Unk,1140,1141,Min,Maj,1179,1180,1178,un w,Repo
-CHP_ALERT_GEOCODER=nominatim
-CHP_ALERT_CONTACT=mailto:you@example.com
 CHP_ALERT_EXISTING=0
 CHP_ALERT_UPDATES=0
 PUSHOVER_APP_TOKEN=
@@ -154,9 +139,9 @@ PUSHOVER_EXPIRE_SECONDS=1800
 PUSHOVER_SOUND=alien
 ```
 
-Legacy `CHP_ALERT_IGNORED_AREAS` and `CHP_ALERT_INCIDENT_TYPES` keys remain in `.env.example` for migration compatibility, but the AREA-prefix and Type-fragment keys above are authoritative.
+Legacy geocoder and exact-name filter keys may remain in older `.env` files for compatibility, but they are not authoritative for the current MARK runtime.
 
-Never commit `.env`, credentials, runtime state, or private operational profile files.
+Never commit `.env`, credentials, runtime state, captured CAD pages, or private operational profile files.
 
 ## Validation
 
@@ -167,6 +152,7 @@ Syntax check:
   .\chp_jamul_alert.py `
   .\chp_detail_alert.py `
   .\mark_detail_runtime.py `
+  .\mark_postback_runtime.py `
   .\mark_backend.py `
   .\chp_gui.py `
   .\mark_gui_entry.py `
@@ -189,17 +175,18 @@ Safe dry poll:
   --log-level DEBUG
 ```
 
-Expected logs include fast-prefilter counts and `detail-header coordinates` for coordinate-bearing calls.
+Expected successful geographic decisions include `CHP detail Lat/Lon` in the reason.
 
 ## Important files
 
 - `mark_gui_entry.py` — safe Tk startup, profile filter manager, boundary simplification
 - `chp_gui.py` — branding, anchored zone extension, waypoint dragging
 - `mark_app.py` — shared dashboard and subprocess controller
-- `mark_backend.py` — 30-second policy and profile/map initialization
-- `mark_detail_runtime.py` — AREA/type prefilter, strict detail parser, coordinate-first match
+- `mark_backend.py` — runtime entry point and patch installation order
+- `mark_postback_runtime.py` — complete browser-faithful CHP detail form submission
+- `mark_detail_runtime.py` — AREA/type prefilter, strict detail parser, CAD-coordinate match
 - `chp_detail_alert.py` — detail model, codes, JSONL logging, alert formatting
-- `chp_jamul_alert.py` — CHP fetch, state, polygon match, geocoder, Pushover
+- `chp_jamul_alert.py` — CHP fetch, state, polygon match, and Pushover
 - `service_area_runtime.py` — GeoJSON validation and polygon installation
 - `geometry_utils.py` — near-collinear waypoint removal
 - `HANDOFF.md` — canonical continuation guide
