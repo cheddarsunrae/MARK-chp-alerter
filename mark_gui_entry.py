@@ -1,23 +1,30 @@
 #!/usr/bin/env python3
 """Reliable MARK GUI entry point.
 
-This initializes Tk before any Tk variables are created, records otherwise-hidden
-pythonw startup failures in runtime/mark-gui-error.log, and adds conservative
-service-area boundary simplification to the map editor.
+This initializes Tk before Tk variables are created, records otherwise-hidden
+pythonw startup failures, adds conservative boundary simplification, and exposes
+Station/profile AREA-prefix and type-fragment filters.
 """
 from __future__ import annotations
 
+import json
+import re
 import sys
+import tkinter as tk
 import traceback
 from pathlib import Path
 from tkinter import messagebox, simpledialog, ttk
 
-from chp_gui import BrandedMarkApp
+import mark_app
+from chp_gui import BrandedMarkApp, PROFILE_MAP_DIR, PROFILES_FILE, slug, split_csv
 from geometry_utils import simplify_closed_polygon
-from mark_app import MarkApp
+from mark_app import DEFAULT_MAP, MarkApp, replace_polygon
 
 ROOT = Path(__file__).resolve().parent
 ERROR_LOG = ROOT / "runtime" / "mark-gui-error.log"
+DEFAULT_AREA_PREFIXES = "BC,El"
+DEFAULT_TYPE_FRAGMENTS = "Unk,1140,1141,Min,Maj,1179,1180,1178,un w,Repo"
+AREA_NAMES = ("San Diego", "Temecula", "Oceanside", "El Cajon", "BC")
 
 
 class SafeMarkApp(BrandedMarkApp):
@@ -34,6 +41,210 @@ class SafeMarkApp(BrandedMarkApp):
         self._press_xy: tuple[int, int] | None = None
         self._dragging = False
         MarkApp.__init__(self)
+
+    def _defaults(self) -> dict[str, str]:
+        values = super()._defaults()
+        values["CHP_ALERT_AREA_PREFIXES"] = DEFAULT_AREA_PREFIXES
+        values["CHP_ALERT_TYPE_FRAGMENTS"] = DEFAULT_TYPE_FRAGMENTS
+        return values
+
+    def _build_config(self, frame: ttk.Frame) -> None:
+        super()._build_config(frame)
+        defaults = self._defaults()
+        self.vars.setdefault(
+            "CHP_ALERT_AREA_PREFIXES",
+            tk.StringVar(value=defaults["CHP_ALERT_AREA_PREFIXES"]),
+        )
+        self.vars.setdefault(
+            "CHP_ALERT_TYPE_FRAGMENTS",
+            tk.StringVar(value=defaults["CHP_ALERT_TYPE_FRAGMENTS"]),
+        )
+
+    def save_configuration(self, quiet: bool = False) -> bool:
+        if not super().save_configuration(quiet=True):
+            return False
+        try:
+            with mark_app.ENV_FILE.open("a", encoding="utf-8") as handle:
+                handle.write("\n# MARK fast listing filters\n")
+                handle.write(
+                    f"CHP_ALERT_AREA_PREFIXES={self.vars['CHP_ALERT_AREA_PREFIXES'].get().strip()}\n"
+                )
+                handle.write(
+                    f"CHP_ALERT_TYPE_FRAGMENTS={self.vars['CHP_ALERT_TYPE_FRAGMENTS'].get().strip()}\n"
+                )
+        except OSError as exc:
+            messagebox.showerror("Configuration error", str(exc), parent=self)
+            return False
+        if not quiet:
+            messagebox.showinfo("Saved", "Configuration saved.", parent=self)
+        return True
+
+    def open_profile_manager(self) -> None:
+        dialog = tk.Toplevel(self)
+        dialog.title("MARK Monitoring Profiles")
+        dialog.geometry("610x650")
+        dialog.transient(self)
+        dialog.grab_set()
+        body = ttk.Frame(dialog, padding=14)
+        body.pack(fill="both", expand=True)
+
+        ttk.Label(body, text="Saved profile", style="PanelHead.TLabel").pack(anchor="w")
+        profile_name = tk.StringVar(value=self.vars["CHP_ALERT_PROFILE"].get())
+        combo = ttk.Combobox(
+            body,
+            textvariable=profile_name,
+            values=sorted(self.profiles),
+            state="readonly",
+        )
+        combo.pack(fill="x", pady=(4, 12))
+
+        ttk.Label(
+            body,
+            text="AREA prefixes to monitor",
+            style="PanelHead.TLabel",
+        ).pack(anchor="w")
+        ttk.Label(
+            body,
+            text=(
+                "MARK compares only the first two characters. Known AREA values: "
+                + ", ".join(AREA_NAMES)
+                + ". Station 36 defaults: BC and El."
+            ),
+            wraplength=570,
+        ).pack(anchor="w", pady=(3, 4))
+        area_prefixes = tk.StringVar(
+            value=self.vars["CHP_ALERT_AREA_PREFIXES"].get() or DEFAULT_AREA_PREFIXES
+        )
+        ttk.Entry(body, textvariable=area_prefixes).pack(fill="x")
+
+        ttk.Separator(body).pack(fill="x", pady=14)
+        ttk.Label(
+            body,
+            text="TYPE fragments to monitor",
+            style="PanelHead.TLabel",
+        ).pack(anchor="w")
+        ttk.Label(
+            body,
+            text=(
+                "Case-insensitive substring matching. Defaults: Unk, 1140, 1141, Min, "
+                "Maj, 1179, 1180, 1178, un w, Repo."
+            ),
+            wraplength=570,
+        ).pack(anchor="w", pady=(3, 4))
+        type_fragments = tk.StringVar(
+            value=self.vars["CHP_ALERT_TYPE_FRAGMENTS"].get() or DEFAULT_TYPE_FRAGMENTS
+        )
+        ttk.Entry(body, textvariable=type_fragments).pack(fill="x")
+
+        ttk.Separator(body).pack(fill="x", pady=14)
+        ttk.Label(
+            body,
+            text="The map coordinates in each selected call's detail header remain the final service-area confirmation.",
+            wraplength=570,
+            style="PanelHead.TLabel",
+        ).pack(anchor="w")
+
+        def apply_choices() -> bool:
+            prefixes = split_csv(area_prefixes.get())
+            fragments = split_csv(type_fragments.get())
+            if not prefixes:
+                messagebox.showerror("No AREA prefixes", "Enter at least one AREA prefix.", parent=dialog)
+                return False
+            if not fragments:
+                messagebox.showerror("No TYPE fragments", "Enter at least one TYPE fragment.", parent=dialog)
+                return False
+            self.vars["CHP_ALERT_AREA_PREFIXES"].set(",".join(dict.fromkeys(prefixes)))
+            self.vars["CHP_ALERT_TYPE_FRAGMENTS"].set(",".join(dict.fromkeys(fragments)))
+            self.vars["CHP_ALERT_PROFILE"].set(profile_name.get().strip())
+            return True
+
+        def load_profile() -> None:
+            profile = self.profiles.get(profile_name.get().strip())
+            if not profile:
+                return
+            self.vars["CHP_ALERT_AREA_PREFIXES"].set(
+                ",".join(profile.get("area_prefixes", ["BC", "El"]))
+            )
+            self.vars["CHP_ALERT_TYPE_FRAGMENTS"].set(
+                ",".join(profile.get("type_fragments", split_csv(DEFAULT_TYPE_FRAGMENTS)))
+            )
+            self.vars["CHP_ALERT_INTERVAL"].set(str(profile.get("poll_interval", "30")))
+            self.vars["CHP_ALERT_EXISTING"].set(str(profile.get("alert_existing", "0")))
+            self.vars["CHP_ALERT_UPDATES"].set(str(profile.get("alert_updates", "0")))
+            raw = Path(str(profile.get("map_file", DEFAULT_MAP)))
+            map_path = raw if raw.is_absolute() else ROOT / raw
+            self.vars["CHP_ALERT_SERVICE_AREA_FILE"].set(str(map_path))
+            self.vars["CHP_ALERT_PROFILE"].set(profile_name.get().strip())
+            self.map_path = map_path
+            self.reload_map(prompt=False)
+            self.save_configuration(quiet=True)
+            self.append_log(f"Loaded profile {profile_name.get().strip()}")
+            dialog.destroy()
+
+        def save_profile() -> None:
+            if not apply_choices():
+                return
+            name = simpledialog.askstring(
+                "Save profile",
+                "Profile name:",
+                initialvalue=profile_name.get(),
+                parent=dialog,
+            )
+            if not name or not name.strip():
+                return
+            name = name.strip()
+            try:
+                PROFILE_MAP_DIR.mkdir(parents=True, exist_ok=True)
+                map_file = PROFILE_MAP_DIR / f"{slug(name)}.geojson"
+                payload = replace_polygon(
+                    json.loads(json.dumps(self.map_payload)),
+                    self.map_points,
+                )
+                map_file.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+                self.profiles[name] = {
+                    "map_file": str(map_file.relative_to(ROOT)),
+                    "area_prefixes": split_csv(self.vars["CHP_ALERT_AREA_PREFIXES"].get()),
+                    "type_fragments": split_csv(self.vars["CHP_ALERT_TYPE_FRAGMENTS"].get()),
+                    "poll_interval": self.vars["CHP_ALERT_INTERVAL"].get(),
+                    "alert_existing": self.vars["CHP_ALERT_EXISTING"].get(),
+                    "alert_updates": self.vars["CHP_ALERT_UPDATES"].get(),
+                }
+                PROFILES_FILE.parent.mkdir(parents=True, exist_ok=True)
+                PROFILES_FILE.write_text(
+                    json.dumps(self.profiles, indent=2, sort_keys=True) + "\n",
+                    encoding="utf-8",
+                )
+                self.vars["CHP_ALERT_PROFILE"].set(name)
+                profile_name.set(name)
+                combo.configure(values=sorted(self.profiles))
+                self.save_configuration(quiet=True)
+                self.append_log(f"Saved profile {name}")
+            except Exception as exc:
+                messagebox.showerror("Profile save failed", str(exc), parent=dialog)
+
+        def delete_profile() -> None:
+            name = profile_name.get().strip()
+            if not name or name not in self.profiles:
+                return
+            if messagebox.askyesno("Delete profile", f"Delete '{name}'?", parent=dialog):
+                self.profiles.pop(name)
+                PROFILES_FILE.write_text(
+                    json.dumps(self.profiles, indent=2, sort_keys=True) + "\n",
+                    encoding="utf-8",
+                )
+                profile_name.set("")
+                combo.configure(values=sorted(self.profiles))
+
+        buttons = ttk.Frame(body)
+        buttons.pack(fill="x", pady=(20, 0))
+        ttk.Button(
+            buttons,
+            text="Apply",
+            command=lambda: dialog.destroy() if apply_choices() else None,
+        ).pack(side="left", padx=3)
+        ttk.Button(buttons, text="Load Profile", command=load_profile).pack(side="left", padx=3)
+        ttk.Button(buttons, text="Save as Profile", command=save_profile).pack(side="left", padx=3)
+        ttk.Button(buttons, text="Delete", command=delete_profile).pack(side="left", padx=3)
 
     def _build_map(self, frame: ttk.Frame) -> None:
         super()._build_map(frame)
