@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""MARK desktop launcher with product-specific header branding."""
+"""MARK desktop launcher with product-specific branding and poll policy."""
 from __future__ import annotations
 
 import sys
@@ -15,7 +15,33 @@ except ImportError as exc:
 
 
 class BrandedMarkApp(MarkApp):
-    """Use the MARK acronym expansion directly beneath the product name."""
+    """Use the MARK acronym expansion and permit polling every 30 seconds."""
+
+    def _defaults(self) -> dict[str, str]:
+        values = super()._defaults()
+        values["CHP_ALERT_INTERVAL"] = "30"
+        return values
+
+    def collect_configuration(self) -> dict[str, str]:
+        interval_text = self.vars["CHP_ALERT_INTERVAL"].get().strip()
+        try:
+            interval = float(interval_text)
+        except ValueError as exc:
+            raise ValueError("Poll interval must be a number") from exc
+        if interval < 30:
+            raise ValueError("Poll interval must be at least 30 seconds")
+
+        # mark_app's shared controller historically enforced 60 seconds. Preserve
+        # all of its other validation while allowing MARK's 30-second policy.
+        if interval < 60:
+            self.vars["CHP_ALERT_INTERVAL"].set("60")
+            try:
+                values = super().collect_configuration()
+            finally:
+                self.vars["CHP_ALERT_INTERVAL"].set(interval_text)
+            values["CHP_ALERT_INTERVAL"] = interval_text
+            return values
+        return super().collect_configuration()
 
     def _build_header(self, root: ttk.Frame) -> None:
         header = ttk.Frame(root)
