@@ -2,17 +2,26 @@ from __future__ import annotations
 
 import os
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
+import chp_jamul_alert as core
 from geometry_utils import simplify_closed_polygon
-from mark_detail_runtime import area_matches, parse_detail_lines, type_matches
+from mark_detail_runtime import (
+    area_matches,
+    extract_detail_coordinates,
+    match_incident,
+    parse_detail_lines,
+    type_matches,
+)
 
 
 class DetailParserTests(unittest.TestCase):
-    def test_rejects_all_incidents_rows_and_keeps_coordinate_header(self) -> None:
+    def test_rejects_all_incidents_rows_and_keeps_chp_lat_lon_header(self) -> None:
         html = """
         <html><body><table>
-          <tr><td>Latitude: 32.650000</td><td>Longitude: -116.930000</td></tr>
+          <tr><td>Location: SR94 / Otay Lakes Rd</td>
+              <td>Lat/Lon: 32.650000 / -116.930000</td></tr>
           <tr><td>12:53 AM</td><td>UNIT ARRIVED ON SCENE</td></tr>
           <tr><td>Details</td><td>0047</td><td>12:53 AM</td>
               <td>Trfc Collision-1141 Enrt</td><td>Sr94 / Otay Lakes Rd</td>
@@ -23,10 +32,47 @@ class DetailParserTests(unittest.TestCase):
         </table></body></html>
         """
         lines = parse_detail_lines(html, "0047")
-        self.assertTrue(any("32.650000" in line and "-116.930000" in line for line in lines))
+        self.assertTrue(any("Lat/Lon:" in line for line in lines))
         self.assertTrue(any("ARRIVED ON SCENE" in line for line in lines))
-        self.assertFalse(any("Otay Lakes Rd" in line for line in lines))
+        self.assertFalse(any("Details | 0047" in line for line in lines))
         self.assertFalse(any("Camino De La Plaza" in line for line in lines))
+
+    def test_extracts_slash_separated_chp_lat_lon(self) -> None:
+        self.assertEqual(
+            extract_detail_coordinates("Lat/Lon: 32.650000 / -116.930000"),
+            (32.65, -116.93),
+        )
+
+    def test_extracts_comma_separated_chp_lat_lon(self) -> None:
+        self.assertEqual(
+            extract_detail_coordinates("Lat/Lon: 32.650000, -116.930000"),
+            (32.65, -116.93),
+        )
+
+    def test_missing_lat_lon_does_not_fall_back_to_geocoder(self) -> None:
+        incident = SimpleNamespace(
+            number="0047",
+            incident_type="Trfc Collision-1141 Enrt",
+            details=("12:53 AM | UNIT ARRIVED ON SCENE",),
+        )
+        with patch("mark_detail_runtime.core.coordinate_match") as coordinate_match:
+            result = match_incident(incident)
+        coordinate_match.assert_not_called()
+        self.assertFalse(result.relevant)
+        self.assertIn("address geocoding disabled", result.reason)
+
+    def test_lat_lon_is_checked_against_polygon(self) -> None:
+        incident = SimpleNamespace(
+            number="0047",
+            incident_type="Trfc Collision-1141 Enrt",
+            details=("Lat/Lon: 32.650000 / -116.930000",),
+        )
+        expected = core.MatchResult(True, "inside configured polygon", "high", 32.65, -116.93, None)
+        with patch("mark_detail_runtime.core.coordinate_match", return_value=expected) as coordinate_match:
+            result = match_incident(incident)
+        coordinate_match.assert_called_once_with((32.65, -116.93))
+        self.assertTrue(result.relevant)
+        self.assertIn("CHP detail Lat/Lon", result.reason)
 
 
 class FastFilterTests(unittest.TestCase):
