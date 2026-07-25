@@ -17,10 +17,18 @@ from service_area_runtime import ServiceAreaError, apply_to_core
 MINIMUM_POLL_INTERVAL_SECONDS = 30.0
 ROOT = Path(__file__).resolve().parent
 LOG = logging.getLogger("mark.backend")
-DEFAULT_TYPES = (
-    "Trfc Collision-1141Enrt",
-    "Trfc Collision-Unkn Inj",
-    "Report of Fire",
+DEFAULT_AREA_PREFIXES = ("BC", "El")
+DEFAULT_TYPE_FRAGMENTS = (
+    "Unk",
+    "1140",
+    "1141",
+    "Min",
+    "Maj",
+    "1179",
+    "1180",
+    "1178",
+    "un w",
+    "Repo",
 )
 
 
@@ -58,17 +66,17 @@ def configure_profile() -> None:
     except ServiceAreaError as exc:
         raise SystemExit(f"Service-area configuration error: {exc}") from exc
 
-    ignored = split_csv(os.getenv("CHP_ALERT_IGNORED_AREAS", "Oceanside,Temecula"))
-    detail.DISCARDED_AREAS = tuple(item.casefold() for item in ignored)
+    area_prefixes = split_csv(
+        os.getenv("CHP_ALERT_AREA_PREFIXES", ",".join(DEFAULT_AREA_PREFIXES))
+    )
+    if not area_prefixes:
+        raise SystemExit("CHP_ALERT_AREA_PREFIXES must contain at least one prefix")
 
-    selected_types = split_csv(
-        os.getenv("CHP_ALERT_INCIDENT_TYPES", ",".join(DEFAULT_TYPES))
+    type_fragments = split_csv(
+        os.getenv("CHP_ALERT_TYPE_FRAGMENTS", ",".join(DEFAULT_TYPE_FRAGMENTS))
     )
-    if not selected_types:
-        raise SystemExit("CHP_ALERT_INCIDENT_TYPES must contain at least one incident type")
-    core.ALLOWED_INCIDENT_TYPES = frozenset(
-        core.normalize_incident_type(item) for item in selected_types
-    )
+    if not type_fragments:
+        raise SystemExit("CHP_ALERT_TYPE_FRAGMENTS must contain at least one fragment")
 
     detail_path = os.getenv("CHP_ALERT_DETAIL_LOG_FILE")
     if detail_path:
@@ -76,12 +84,12 @@ def configure_profile() -> None:
 
     profile = os.getenv("CHP_ALERT_PROFILE", "").strip() or "custom"
     LOG.info(
-        "Loaded MARK profile %s: map=%s vertices=%d ignored=%s incident_types=%s",
+        "Loaded MARK profile %s: map=%s vertices=%d area_prefixes=%s type_fragments=%s",
         profile,
         map_path,
         len(area["polygon"]),
-        ", ".join(ignored) or "none",
-        ", ".join(selected_types),
+        ", ".join(area_prefixes),
+        ", ".join(type_fragments),
     )
 
 
