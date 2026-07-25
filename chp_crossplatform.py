@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Cross-platform CHP Alerter entry point with runtime GeoJSON loading."""
+"""Cross-platform MARK entry point with runtime GeoJSON loading."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ from pathlib import Path
 
 import chp_detail_alert as detail
 import chp_jamul_alert as core
+import mark_backend
 from service_area_runtime import ServiceAreaError, apply_to_core
 
 ROOT = Path(__file__).resolve().parent
@@ -47,7 +48,7 @@ def main() -> int:
     except ServiceAreaError as exc:
         print(f"Service-area configuration error: {exc}", file=sys.stderr)
         return 2
-    return detail.main()
+    return mark_backend.main()
 
 
 if __name__ == "__main__":
