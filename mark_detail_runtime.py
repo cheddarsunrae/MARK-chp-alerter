@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
-"""MARK runtime corrections for CHP incident-detail responses.
+"""MARK runtime corrections and fast first-pass CHP filtering.
 
 CHP detail postbacks can return the selected incident panel together with the
-complete incident listing.  The legacy parser accepted every timestamped table
-row, which attached unrelated incidents to each call.  This module installs a
-strict parser at runtime and treats latitude/longitude in the selected detail
-header as the authoritative geographic confirmation.
+complete incident listing. The legacy parser accepted every timestamped table
+row, which attached unrelated incidents to each call. This module installs a
+strict parser, treats latitude/longitude in the selected detail header as the
+authoritative geographic confirmation, and avoids unnecessary detail requests
+by filtering listing rows with configurable AREA prefixes and type fragments.
 """
 from __future__ import annotations
 
+import os
 import re
 from typing import Any
 
@@ -18,6 +20,20 @@ from bs4 import BeautifulSoup
 import chp_detail_alert as detail
 import chp_jamul_alert as core
 
+
+DEFAULT_AREA_PREFIXES = ("BC", "El")
+DEFAULT_TYPE_FRAGMENTS = (
+    "Unk",
+    "1140",
+    "1141",
+    "Min",
+    "Maj",
+    "1179",
+    "1180",
+    "1178",
+    "un w",
+    "Repo",
+)
 
 TIME_PATTERN = re.compile(r"\d{1,2}:\d{2}(?::\d{2})?\s*[AP]M", re.I)
 LISTING_ROW_PATTERN = re.compile(
@@ -34,6 +50,38 @@ DETAIL_LANGUAGE = re.compile(
     r"lat|lon|gps)\b",
     re.I,
 )
+
+
+def split_config(value: str | None) -> tuple[str, ...]:
+    return tuple(
+        item.strip()
+        for item in re.split(r"[,;\n]+", value or "")
+        if item.strip()
+    )
+
+
+def configured_area_prefixes() -> tuple[str, ...]:
+    values = split_config(os.getenv("CHP_ALERT_AREA_PREFIXES"))
+    return values or DEFAULT_AREA_PREFIXES
+
+
+def configured_type_fragments() -> tuple[str, ...]:
+    values = split_config(os.getenv("CHP_ALERT_TYPE_FRAGMENTS"))
+    return values or DEFAULT_TYPE_FRAGMENTS
+
+
+def area_matches(area: str) -> bool:
+    normalized = core.normalize_space(area).casefold()
+    return any(
+        normalized.startswith(prefix.casefold()[:2])
+        for prefix in configured_area_prefixes()
+        if prefix
+    )
+
+
+def type_matches(incident_type: str) -> bool:
+    normalized = core.normalize_space(incident_type).casefold()
+    return any(fragment.casefold() in normalized for fragment in configured_type_fragments())
 
 
 def _row_values(row: Any) -> list[str]:
@@ -80,7 +128,6 @@ def parse_detail_lines(html: str, incident_number: str | None = None) -> tuple[s
         if "number of incidents:" in folded:
             continue
 
-        # Detail-header coordinates are the preferred geographic evidence.
         if core.extract_coordinates(joined):
             lines.append(joined)
             continue
@@ -119,7 +166,39 @@ def fetch_details(
     return parse_detail_lines(response.text, incident_number)
 
 
+_ORIGINAL_PARSE_INCIDENTS = detail.parse_incidents
 _ORIGINAL_MATCH_INCIDENT = detail.match_incident
+
+
+def parse_incidents(html: str) -> list[Any]:
+    """Filter the listing before any detail postback is requested."""
+    incidents = _ORIGINAL_PARSE_INCIDENTS(html)
+    selected: list[Any] = []
+    for incident in incidents:
+        if not area_matches(incident.area):
+            detail.LOG.debug(
+                "Discarded incident %s by AREA prefix: AREA=%s allowed=%s",
+                incident.number,
+                incident.area,
+                ",".join(configured_area_prefixes()),
+            )
+            continue
+        if not type_matches(incident.incident_type):
+            detail.LOG.debug(
+                "Discarded incident %s by TYPE fragment: TYPE=%s",
+                incident.number,
+                incident.incident_type,
+            )
+            continue
+        selected.append(incident)
+    detail.LOG.info(
+        "Fast prefilter retained %d of %d incidents using AREA prefixes=%s and TYPE fragments=%s",
+        len(selected),
+        len(incidents),
+        ",".join(configured_area_prefixes()),
+        ",".join(configured_type_fragments()),
+    )
+    return selected
 
 
 def match_incident(incident: Any, **kwargs: Any) -> Any:
@@ -131,7 +210,7 @@ def match_incident(incident: Any, **kwargs: Any) -> Any:
         trigger = (
             f"detail code {', '.join(alert_codes)}"
             if alert_codes
-            else f"target call type {incident.incident_type}"
+            else f"type fragment match: {incident.incident_type}"
         )
         result = core.coordinate_match(coordinates)
         return core.MatchResult(
@@ -146,7 +225,9 @@ def match_incident(incident: Any, **kwargs: Any) -> Any:
 
 
 def install() -> None:
-    """Install the corrected parser into the imported detail module."""
+    """Install MARK's corrected parser and first-pass filters."""
+    detail.parse_incidents = parse_incidents
     detail.parse_detail_lines = parse_detail_lines
     detail.fetch_details = fetch_details
     detail.match_incident = match_incident
+    core.is_alertable_incident_type = type_matches
