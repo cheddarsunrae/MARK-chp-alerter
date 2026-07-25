@@ -1,41 +1,71 @@
-# CHP Alerter
+# MARK — Map-Aware Roadway Knowledge
 
-CHP Alerter polls the public California Highway Patrol CAD page, filters incidents to **a specified service area**, retrieves the associated incident-detail updates, and sends qualifying incidents through Pushover.
+MARK polls the public California Highway Patrol CAD page, retrieves incident details, checks incidents against a configurable GeoJSON service area, and sends qualifying incidents through Pushover.
 
-> **Supplemental awareness only.** This is not an official CAD terminal, station alerting system, pager, radio, or replacement for agency dispatch. Public webpages, geocoding, networks, and third-party push services can fail or change.
+> **Supplemental awareness only.** MARK is not an official CAD terminal, pager, radio, station alerting system, or replacement for agency dispatch. Public webpages, networks, geocoding, and push services can fail or change.
 
-The repository includes a Station 36/Jamul sample configuration, but the monitor and desktop interface are designed so other stations can select or create their own GeoJSON service-area file.
+## Current capabilities
 
-## Current alert logic
+- Cross-platform Tkinter dashboard for Windows and Fedora/Linux
+- Minimum polling interval of 30 seconds
+- Pushover emergency-priority notifications
+- Incident-detail postback retrieval
+- Detail-code handling for `11-78`, `11-79`, `11-80`, `11-81`, and log-only `11-82`
+- GeoJSON service-area polygons on an OpenStreetMap basemap
+- Zone-extension editing, draggable waypoints, and conservative boundary simplification
+- Configurable ignored CHP `AREA` regions
+- Configurable incident types
+- Named profiles that save map, ignored regions, incident types, polling, and update behavior
+- JSONL detail audit log and persistent incident state
 
-Normal alerts require both a geographic match and one of these CHP call types:
+## Alert decision order
+
+For every non-ignored incident, MARK:
+
+1. fetches the selected incident detail postback;
+2. rejects ordinary all-incidents listing rows that CHP also returns in that response;
+3. retains the selected incident's header and genuine CAD/operator notes;
+4. checks the configured incident type or qualifying detail code;
+5. uses latitude/longitude from the selected detail header as the preferred geographic confirmation;
+6. falls back to embedded listing coordinates, configured text rules, then Nominatim geocoding;
+7. checks the resulting coordinate against the active service-area polygon;
+8. sends a Pushover alert containing the incident summary and available notes.
+
+Coordinates in the detail header are treated as authoritative because they are supplied by CHP for the selected call. Third-party geocoding is a fallback, not the primary location source.
+
+## Default incident types and codes
+
+Default incident types:
 
 - `Trfc Collision-1141Enrt`
 - `Trfc Collision-Unkn Inj`
 - `Report of Fire`
 
-Incident details are fetched through the CHP ASP.NET `gvIncidents / Select$n` postback. Detail codes `11-78`, `11-79`, `11-80`, and `11-81` can promote another call type into the normal geographically filtered alert path. `11-82` is logged but does not yet send its future separate alert category.
+Configured values are stored in:
 
-Rows with `AREA` containing Oceanside or Temecula are discarded before a detail request is made.
+```dotenv
+CHP_ALERT_INCIDENT_TYPES=Trfc Collision-1141Enrt,Trfc Collision-Unkn Inj,Report of Fire
+```
 
-## Cross-platform desktop interface
+Codes `11-78`, `11-79`, `11-80`, and `11-81` can promote another incident type into the normal geographically filtered alert path. `11-82` is recorded but does not generate its own alert.
 
-The same Tkinter interface runs on Windows and Fedora/Linux. It provides:
+## Ignored CHP regions
 
-- Start and stop controls
-- Pushover testing
-- One-poll dry runs
-- Live logs and poll summaries
-- Configuration editing and reload
-- Service-area GeoJSON selection, validation, and reload
-- A polygon map editor
-- Windows and Linux launchers
+Ignored regions are profile-configurable rather than hard-coded:
 
-The backend reads the service-area map when it starts. **Reload Map** validates and saves the selected file, then offers to restart a running monitor so the new boundary takes effect.
+```dotenv
+CHP_ALERT_IGNORED_AREAS=Oceanside,Temecula
+```
+
+Examples:
+
+- North County users might ignore `San Diego` but keep `Oceanside` and `Temecula`.
+- East County users may ignore `Oceanside` and `Temecula` while retaining `El Cajon`, `BC`, and `San Diego`.
+- An empty ignored-region list processes every CHP `AREA` value.
+
+Matching is case-insensitive and substring-based.
 
 ## Windows quick start
-
-From PowerShell:
 
 ```powershell
 cd C:\Users\Shane\Documents\GitHub\chp-alerter
@@ -44,19 +74,18 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 .\start-chp-alerter.ps1
 ```
 
-The launcher creates `.venv`, installs dependencies, creates `.env` from `.env.example` when needed, and starts the GUI.
+The launcher creates `.venv` when needed, installs requirements, creates `.env` from `.env.example`, performs a Python syntax preflight, and starts `mark_gui_entry.py` through `pythonw.exe`.
 
-## Fedora quick start
+Hidden GUI startup failures are written to:
 
-Install Python and Tkinter once:
+```text
+runtime\mark-gui-error.log
+```
+
+## Fedora/Linux quick start
 
 ```bash
 sudo dnf install -y python3 python3-tkinter
-```
-
-Then:
-
-```bash
 cd /path/to/chp-alerter
 git pull
 chmod +x start-chp-alerter.sh
@@ -65,7 +94,7 @@ chmod +x start-chp-alerter.sh
 
 ## Required configuration
 
-Enter these values in the GUI's **Configuration** tab:
+Enter these values in the GUI:
 
 ```dotenv
 CHP_ALERT_CONTACT=mailto:you@example.com
@@ -73,7 +102,7 @@ PUSHOVER_APP_TOKEN=your_application_api_token
 PUSHOVER_USER_KEY=your_user_or_group_key
 ```
 
-The default emergency profile is:
+Default emergency settings:
 
 ```dotenv
 PUSHOVER_PRIORITY=2
@@ -82,105 +111,120 @@ PUSHOVER_EXPIRE_SECONDS=1800
 PUSHOVER_SOUND=alien
 ```
 
-`alien`, `climb`, `echo`, `updown`, and `persistent` are the longer built-in Pushover choices exposed by the interface.
+## Monitoring profiles
 
-## Service-area files
+Open **Profiles / Regions / Incident Types** in the Configuration panel.
 
-The active map is configured with:
+A profile saves:
 
-```dotenv
-CHP_ALERT_SERVICE_AREA_FILE=service_area.geojson
+- a private GeoJSON map copy;
+- ignored CHP regions;
+- incident types;
+- poll interval;
+- alert-existing behavior;
+- alert-update behavior.
+
+Profile metadata is stored in:
+
+```text
+profiles/profiles.json
+profiles/maps/
 ```
 
-The file must be valid GeoJSON containing at least one Polygon feature. Point features may be included as operational references. Standard GeoJSON coordinate order is:
+Loading a profile updates the GUI and active `.env`. Restart a running monitor after loading or changing a profile.
+
+## Loading a service-area map
+
+In **Configuration**, locate **Service Area File**, click `…`, and choose a `.geojson` or `.json` file. The file must contain a GeoJSON `Polygon` with at least three unique vertices.
+
+GeoJSON coordinate order is:
 
 ```text
 [longitude, latitude]
 ```
 
-The supplied `service_area.geojson` is a sample operational polygon, not a legal district boundary.
+MARK internally displays and processes points as `(latitude, longitude)`.
 
-### Map editor
+## Map editing
 
-Press **Edit Map** in the desktop interface.
+Editing is disabled by default so panning and zoom controls cannot alter the polygon.
 
-- Drag a red vertex to move it.
-- Double-click near an edge to insert a vertex.
-- Right-click a vertex to remove it.
-- Use **Save As** to create separate maps for coworkers or stations.
-- Use **Reload Map** in the controller after saving.
+### Extend an existing zone
 
-The editor validates the resulting GeoJSON before replacing the selected file. It is a coordinate editor, not yet a full online street-tile GIS editor.
+1. Enable editing.
+2. Click an existing numbered waypoint; it turns red.
+3. Click **Start Extension**.
+4. Click at least two new positions.
+5. The final click acts as an endpoint hint.
+6. Click **Finish Extension**.
+7. MARK substitutes the nearest pre-existing waypoint for the final temporary point and replaces the shorter old boundary segment.
+8. Review the result and press **Save Map**.
 
-## Command-line operation
+Existing waypoints may be dragged when no extension is active.
 
-The map-aware backend entry point is:
+### Simplify Boundary
 
-```text
-chp_crossplatform.py
+**Simplify Boundary** removes points that are nearly collinear with their immediate neighbours. The user chooses a tolerance in metres and confirms the number of points to remove before the map changes.
+
+A 25 m default is intentionally conservative. Simplification can reduce redundant hand-drawn points and make the boundary easier to inspect and serialize, but it does **not meaningfully improve point-in-polygon performance at normal MARK polygon sizes**. The main benefit is a cleaner, less error-prone boundary. Excessive tolerance can move the boundary, so always review the preview before saving.
+
+## Detail parsing and logs
+
+`chp_detail_alert.py` contains the legacy detail workflow. `mark_detail_runtime.py` installs the corrected parser at startup.
+
+The correction is necessary because CHP detail postbacks may contain:
+
+- the selected incident detail header;
+- genuine CAD/operator notes;
+- the complete incident listing table.
+
+The corrected parser keeps coordinate-bearing detail-header rows and real notes while rejecting ordinary listing rows. This prevents every incident from inheriting every other incident's summary.
+
+Detail changes are stored in JSON Lines format at `CHP_ALERT_DETAIL_LOG_FILE`. Records include incident metadata, retained notes, and detected 11-codes.
+
+## Safe command-line tests
+
+Syntax check:
+
+```powershell
+.\.venv\Scripts\python.exe -m py_compile `
+  .\chp_jamul_alert.py `
+  .\chp_detail_alert.py `
+  .\mark_detail_runtime.py `
+  .\mark_backend.py `
+  .\chp_gui.py `
+  .\mark_gui_entry.py `
+  .\geometry_utils.py
 ```
 
-Test Pushover:
+One dry poll:
 
-```bash
-python chp_crossplatform.py --test-pushover
+```powershell
+.\.venv\Scripts\python.exe .\mark_backend.py `
+  --once `
+  --dry-run `
+  --alert-existing `
+  --log-level DEBUG
 ```
 
-One safe poll without sending incident notifications:
-
-```bash
-python chp_crossplatform.py --once --dry-run --alert-existing --log-level DEBUG
-```
-
-Continuous foreground operation:
-
-```bash
-python chp_crossplatform.py
-```
-
-## Fedora/systemd installation
-
-Install these application files in `/opt/chp-alerter`:
-
-```text
-chp_crossplatform.py
-chp_detail_alert.py
-chp_jamul_alert.py
-service_area_runtime.py
-service_area.geojson
-requirements.txt
-```
-
-Set production paths in `/etc/chp-alerter.env`:
-
-```dotenv
-CHP_ALERT_STATE_FILE=/var/lib/chp-jamul-alert/state.json
-CHP_ALERT_DETAIL_LOG_FILE=/var/lib/chp-jamul-alert/details.jsonl
-CHP_ALERT_SERVICE_AREA_FILE=/opt/chp-alerter/service_area.geojson
-```
-
-Install and start the service:
-
-```bash
-sudo cp chp-alerter.service /etc/systemd/system/chp-alerter.service
-sudo systemctl daemon-reload
-sudo systemctl enable --now chp-alerter.service
-sudo journalctl -u chp-alerter.service -f
-```
+The dry run prints qualifying alerts but does not deliver Pushover notifications.
 
 ## Important files
 
-- `chp_crossplatform.py` — map-aware production entry point
-- `chp_detail_alert.py` — incident details and 11-code handling
-- `chp_jamul_alert.py` — CHP polling, geocoding, state, and Pushover core
-- `chp_gui_crossplatform.py` — Windows/Fedora desktop controller
-- `service_area_editor.py` — GeoJSON polygon editor
-- `service_area_runtime.py` — map validation and runtime loader
-- `service_area.geojson` — supplied sample service area
-- `start-chp-alerter.ps1` — Windows launcher
-- `start-chp-alerter.sh` — Fedora/Linux launcher
-- `chp-alerter.service` — hardened Linux systemd service
+- `mark_gui_entry.py` — safe GUI entry point and boundary simplification
+- `chp_gui.py` — profiles and zone-extension map editor
+- `mark_app.py` — dashboard foundation and process controller
+- `mark_backend.py` — production backend entry point and profile application
+- `mark_detail_runtime.py` — corrected CHP detail parsing and coordinate priority
+- `chp_detail_alert.py` — detail models, logs, codes, and alert formatting
+- `chp_jamul_alert.py` — CHP polling, state, geocoding, polygon matching, and Pushover
+- `geometry_utils.py` — conservative polygon simplification
+- `service_area_runtime.py` — GeoJSON validation and runtime loading
+- `service_area.geojson` — supplied sample map
+- `.env.example` — configuration template
+- `MARK_GUI.md` — GUI instructions
+- `HANDOFF.md` — complete continuation state for another thread
 
 ## Security
 
-Never commit `.env`, Pushover credentials, or recipient keys. The repository's `.gitignore` excludes local configuration and runtime state.
+Never commit `.env`, Pushover credentials, recipient keys, runtime state, or private operational profiles. Review `.gitignore` before adding profile data or logs.
