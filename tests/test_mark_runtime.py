@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import os
 import unittest
+from unittest.mock import patch
 
 from geometry_utils import simplify_closed_polygon
-from mark_detail_runtime import parse_detail_lines
+from mark_detail_runtime import area_matches, parse_detail_lines, type_matches
 
 
 class DetailParserTests(unittest.TestCase):
@@ -25,6 +27,34 @@ class DetailParserTests(unittest.TestCase):
         self.assertTrue(any("ARRIVED ON SCENE" in line for line in lines))
         self.assertFalse(any("Otay Lakes Rd" in line for line in lines))
         self.assertFalse(any("Camino De La Plaza" in line for line in lines))
+
+
+class FastFilterTests(unittest.TestCase):
+    def test_station_36_area_prefix_defaults(self) -> None:
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("CHP_ALERT_AREA_PREFIXES", None)
+            self.assertTrue(area_matches("BC"))
+            self.assertTrue(area_matches("El Cajon"))
+            self.assertFalse(area_matches("San Diego"))
+            self.assertFalse(area_matches("Temecula"))
+            self.assertFalse(area_matches("Oceanside"))
+
+    def test_area_prefixes_use_first_two_characters(self) -> None:
+        with patch.dict(os.environ, {"CHP_ALERT_AREA_PREFIXES": "Sa,Oc"}):
+            self.assertTrue(area_matches("San Diego"))
+            self.assertTrue(area_matches("Oceanside"))
+            self.assertFalse(area_matches("El Cajon"))
+
+    def test_type_fragments_are_case_insensitive_substrings(self) -> None:
+        with patch.dict(
+            os.environ,
+            {"CHP_ALERT_TYPE_FRAGMENTS": "Unk,1140,1141,Min,Maj,1179,1180,1178,un w,Repo"},
+        ):
+            self.assertTrue(type_matches("Trfc Collision-Unkn Inj"))
+            self.assertTrue(type_matches("Trfc Collision-1141 Enrt"))
+            self.assertTrue(type_matches("Report of Fire"))
+            self.assertTrue(type_matches("MINOR INJURY COLLISION"))
+            self.assertFalse(type_matches("Traffic Hazard"))
 
 
 class GeometryTests(unittest.TestCase):
