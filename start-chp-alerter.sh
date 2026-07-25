@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -eu
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT"
@@ -16,4 +16,4 @@ if [[ ! -f .env ]]; then
   cp .env.example .env
 fi
 
-exec "$PYTHON" "$ROOT/chp_gui_crossplatform.py"
+exec "$PYTHON" "$ROOT/chp_gui.py"
