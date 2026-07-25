@@ -4,9 +4,9 @@
 CHP detail postbacks can return the selected incident panel together with the
 complete incident listing. The legacy parser accepted every timestamped table
 row, which attached unrelated incidents to each call. This module installs a
-strict parser, treats latitude/longitude in the selected detail header as the
-authoritative geographic confirmation, and avoids unnecessary detail requests
-by filtering listing rows with configurable AREA prefixes and type fragments.
+strict parser, treats the CHP ``Lat/Lon:`` detail-header value as authoritative,
+and avoids unnecessary detail requests by filtering listing rows with
+configurable AREA prefixes and type fragments.
 """
 from __future__ import annotations
 
@@ -41,6 +41,28 @@ LISTING_ROW_PATTERN = re.compile(
     r"\d{1,2}:\d{2}(?::\d{2})?\s*[AP]M\s*\|",
     re.I,
 )
+
+# CHP places the authoritative coordinate in the selected detail header using
+# a label such as: ``Lat/Lon: 32.650000 / -116.930000``.  Accept slash, comma,
+# semicolon, pipe, or ordinary whitespace between the two values.
+LAT_LON_PATTERN = re.compile(
+    r"\bLat\s*/\s*Lon\s*:\s*"
+    r"(?P<lat>[+-]?(?:\d{1,2}(?:\.\d+)?|90(?:\.0+)?))"
+    r"\s*(?:/|,|;|\||\s)\s*"
+    r"(?P<lon>[+-]?(?:\d{1,3}(?:\.\d+)?|180(?:\.0+)?))\b",
+    re.I,
+)
+
+# Retain compatibility with detail variants that present separate labels.
+SEPARATE_LAT_LON_PATTERN = re.compile(
+    r"\bLat(?:itude)?\s*:\s*"
+    r"(?P<lat>[+-]?(?:\d{1,2}(?:\.\d+)?|90(?:\.0+)?))"
+    r".{0,80}?"
+    r"\bLon(?:gitude)?\s*:\s*"
+    r"(?P<lon>[+-]?(?:\d{1,3}(?:\.\d+)?|180(?:\.0+)?))\b",
+    re.I | re.S,
+)
+
 DETAIL_LANGUAGE = re.compile(
     r"\b(?:unit|caller|vehicle|party|incident|location|fire|reported|advised|"
     r"enrt|en route|arrived|scene|tow|lane|blocked|closure|transferred|medic|"
@@ -81,14 +103,33 @@ def area_matches(area: str) -> bool:
 
 def type_matches(incident_type: str) -> bool:
     normalized = core.normalize_space(incident_type).casefold()
-    return any(fragment.casefold() in normalized for fragment in configured_type_fragments())
+    return any(
+        fragment.casefold() in normalized
+        for fragment in configured_type_fragments()
+    )
+
+
+def extract_detail_coordinates(text: str) -> tuple[float, float] | None:
+    """Extract and validate CHP's authoritative detail-header coordinates."""
+    match = LAT_LON_PATTERN.search(text) or SEPARATE_LAT_LON_PATTERN.search(text)
+    if not match:
+        return None
+
+    latitude = float(match.group("lat"))
+    longitude = float(match.group("lon"))
+    if not (-90.0 <= latitude <= 90.0 and -180.0 <= longitude <= 180.0):
+        return None
+    return latitude, longitude
 
 
 def _row_values(row: Any) -> list[str]:
     cells = row.find_all(["td", "th"], recursive=False) or row.find_all(["td", "th"])
     return [
         value
-        for value in (core.normalize_space(cell.get_text(" ", strip=True)) for cell in cells)
+        for value in (
+            core.normalize_space(cell.get_text(" ", strip=True))
+            for cell in cells
+        )
         if value
     ]
 
@@ -97,7 +138,11 @@ def _is_listing_row(values: list[str], joined: str) -> bool:
     """Identify an ordinary row from the all-incidents listing grid."""
     if LISTING_ROW_PATTERN.match(joined):
         return True
-    if len(values) >= 5 and re.fullmatch(r"\d{3,5}", values[0]) and TIME_PATTERN.fullmatch(values[1]):
+    if (
+        len(values) >= 5
+        and re.fullmatch(r"\d{3,5}", values[0])
+        and TIME_PATTERN.fullmatch(values[1])
+    ):
         return True
     return bool(
         len(values) >= 6
@@ -107,11 +152,14 @@ def _is_listing_row(values: list[str], joined: str) -> bool:
     )
 
 
-def parse_detail_lines(html: str, incident_number: str | None = None) -> tuple[str, ...]:
+def parse_detail_lines(
+    html: str,
+    incident_number: str | None = None,
+) -> tuple[str, ...]:
     """Return only the selected incident's header and genuine CAD notes.
 
-    Coordinate-bearing rows are retained before generic row filtering because
-    CHP places the selected call's latitude/longitude in its detail header.
+    A row containing ``Lat/Lon:`` is retained before generic row filtering
+    because it is the authoritative location for the selected CHP call.
     """
     soup = BeautifulSoup(html, "html.parser")
     lines: list[str] = []
@@ -128,7 +176,7 @@ def parse_detail_lines(html: str, incident_number: str | None = None) -> tuple[s
         if "number of incidents:" in folded:
             continue
 
-        if core.extract_coordinates(joined):
+        if extract_detail_coordinates(joined):
             lines.append(joined)
             continue
 
@@ -136,7 +184,12 @@ def parse_detail_lines(html: str, incident_number: str | None = None) -> tuple[s
             continue
 
         cleaned = list(values)
-        if cleaned and cleaned[0].casefold() in {"details", "detail", "time", "timestamp"}:
+        if cleaned and cleaned[0].casefold() in {
+            "details",
+            "detail",
+            "time",
+            "timestamp",
+        }:
             cleaned = cleaned[1:]
         if incident_number and cleaned and cleaned[0] == incident_number:
             cleaned = cleaned[1:]
@@ -144,7 +197,11 @@ def parse_detail_lines(html: str, incident_number: str | None = None) -> tuple[s
         if not text:
             continue
 
-        if detail.CODE_PATTERN.search(text) or TIME_PATTERN.search(text) or DETAIL_LANGUAGE.search(text):
+        if (
+            detail.CODE_PATTERN.search(text)
+            or TIME_PATTERN.search(text)
+            or DETAIL_LANGUAGE.search(text)
+        ):
             lines.append(text)
 
     return tuple(dict.fromkeys(lines))
@@ -167,7 +224,6 @@ def fetch_details(
 
 
 _ORIGINAL_PARSE_INCIDENTS = detail.parse_incidents
-_ORIGINAL_MATCH_INCIDENT = detail.match_incident
 
 
 def parse_incidents(html: str) -> list[Any]:
@@ -202,26 +258,42 @@ def parse_incidents(html: str) -> list[Any]:
 
 
 def match_incident(incident: Any, **kwargs: Any) -> Any:
-    """Prefer selected-detail coordinates, then use the normal fallback chain."""
-    coordinates = core.extract_coordinates(" | ".join(getattr(incident, "details", ())))
-    if coordinates:
-        codes = detail.detail_codes(incident.details)
-        alert_codes = sorted(codes & detail.ALERT_CODES)
-        trigger = (
-            f"detail code {', '.join(alert_codes)}"
-            if alert_codes
-            else f"type fragment match: {incident.incident_type}"
+    """Match exclusively from the CHP detail-header coordinate.
+
+    Address geocoding is deliberately not used. Every selected CHP detail page
+    is expected to provide ``Lat/Lon:``; failure to parse it is surfaced as a
+    parser/data problem rather than silently substituting a third-party result.
+    """
+    detail_text = " | ".join(getattr(incident, "details", ()))
+    coordinates = extract_detail_coordinates(detail_text)
+    if not coordinates:
+        detail.LOG.error(
+            "Incident %s matched the listing prefilter but its selected detail response "
+            "did not contain a parseable Lat/Lon header; address geocoding was not attempted",
+            getattr(incident, "number", "unknown"),
         )
-        result = core.coordinate_match(coordinates)
         return core.MatchResult(
-            result.relevant,
-            f"{trigger}; detail-header coordinates; {result.reason}",
-            "high",
-            result.latitude,
-            result.longitude,
-            result.distance_km,
+            False,
+            "selected detail missing or unparseable Lat/Lon; address geocoding disabled",
+            "low",
         )
-    return _ORIGINAL_MATCH_INCIDENT(incident, **kwargs)
+
+    codes = detail.detail_codes(incident.details)
+    alert_codes = sorted(codes & detail.ALERT_CODES)
+    trigger = (
+        f"detail code {', '.join(alert_codes)}"
+        if alert_codes
+        else f"type fragment match: {incident.incident_type}"
+    )
+    result = core.coordinate_match(coordinates)
+    return core.MatchResult(
+        result.relevant,
+        f"{trigger}; CHP detail Lat/Lon; {result.reason}",
+        "high",
+        result.latitude,
+        result.longitude,
+        result.distance_km,
+    )
 
 
 def install() -> None:
