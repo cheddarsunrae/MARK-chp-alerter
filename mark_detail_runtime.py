@@ -2,14 +2,14 @@
 """MARK runtime corrections and fast first-pass CHP filtering.
 
 CHP detail postbacks can return the selected incident panel together with the
-complete incident listing. The legacy parser accepted every timestamped table
-row, which attached unrelated incidents to each call. This module installs a
-strict parser, treats the CHP ``Lat/Lon:`` detail-header value as authoritative,
-and avoids unnecessary detail requests by filtering listing rows with
-configurable AREA prefixes and type fragments.
+complete incident listing. This module installs a strict parser, treats the CHP
+``Lat/Lon:`` detail-header value as authoritative, and avoids unnecessary detail
+requests by filtering listing rows with configurable AREA prefixes and Type
+fragments.
 """
 from __future__ import annotations
 
+import html as html_module
 import os
 import re
 from typing import Any
@@ -42,27 +42,24 @@ LISTING_ROW_PATTERN = re.compile(
     re.I,
 )
 
-# CHP places the authoritative coordinate in the selected detail header using
-# a label such as: ``Lat/Lon: 32.650000 / -116.930000``.  Accept slash, comma,
-# semicolon, pipe, or ordinary whitespace between the two values.
-LAT_LON_PATTERN = re.compile(
-    r"\bLat\s*/\s*Lon\s*:\s*"
-    r"(?P<lat>[+-]?(?:\d{1,2}(?:\.\d+)?|90(?:\.0+)?))"
-    r"\s*(?:/|,|;|\||\s)\s*"
-    r"(?P<lon>[+-]?(?:\d{1,3}(?:\.\d+)?|180(?:\.0+)?))\b",
+# CHP's selected-call header uses a Lat/Lon label. The two coordinates may be
+# separated by slash, comma, pipe, semicolon, whitespace, HTML markup, or short
+# labels. Capture the first two decimal numbers following the label rather than
+# depending on a specific table layout.
+LAT_LON_LABEL = re.compile(r"\bLat\s*/\s*Lon\b\s*:?", re.I)
+COORD_NUMBER = re.compile(
+    r"(?P<number>[+-]?(?:\d{1,3}(?:\.\d+)?|\.\d+))\s*"
+    r"(?P<direction>[NSEW])?",
     re.I,
 )
-
-# Retain compatibility with detail variants that present separate labels.
 SEPARATE_LAT_LON_PATTERN = re.compile(
-    r"\bLat(?:itude)?\s*:\s*"
-    r"(?P<lat>[+-]?(?:\d{1,2}(?:\.\d+)?|90(?:\.0+)?))"
-    r".{0,80}?"
-    r"\bLon(?:gitude)?\s*:\s*"
-    r"(?P<lon>[+-]?(?:\d{1,3}(?:\.\d+)?|180(?:\.0+)?))\b",
+    r"\bLat(?:itude)?\s*:?\s*"
+    r"(?P<lat>[+-]?(?:\d{1,3}(?:\.\d+)?|\.\d+))\s*(?P<lat_dir>[NS])?"
+    r".{0,160}?"
+    r"\bLon(?:gitude)?\s*:?\s*"
+    r"(?P<lon>[+-]?(?:\d{1,3}(?:\.\d+)?|\.\d+))\s*(?P<lon_dir>[EW])?",
     re.I | re.S,
 )
-
 DETAIL_LANGUAGE = re.compile(
     r"\b(?:unit|caller|vehicle|party|incident|location|fire|reported|advised|"
     r"enrt|en route|arrived|scene|tow|lane|blocked|closure|transferred|medic|"
@@ -109,17 +106,75 @@ def type_matches(incident_type: str) -> bool:
     )
 
 
+def _apply_direction(value: float, direction: str | None) -> float:
+    if direction and direction.upper() in {"S", "W"}:
+        return -abs(value)
+    if direction and direction.upper() in {"N", "E"}:
+        return abs(value)
+    return value
+
+
+def _valid_coordinates(latitude: float, longitude: float) -> bool:
+    return -90.0 <= latitude <= 90.0 and -180.0 <= longitude <= 180.0
+
+
 def extract_detail_coordinates(text: str) -> tuple[float, float] | None:
-    """Extract and validate CHP's authoritative detail-header coordinates."""
-    match = LAT_LON_PATTERN.search(text) or SEPARATE_LAT_LON_PATTERN.search(text)
-    if not match:
+    """Extract CHP's authoritative coordinates from text or raw HTML.
+
+    This intentionally searches the entire selected-detail response, not only
+    table rows. CHP may render the header in a span, div, label, attribute, or
+    another element outside the CAD-note table.
+    """
+    if not text:
         return None
 
-    latitude = float(match.group("lat"))
-    longitude = float(match.group("lon"))
-    if not (-90.0 <= latitude <= 90.0 and -180.0 <= longitude <= 180.0):
-        return None
-    return latitude, longitude
+    decoded = html_module.unescape(text)
+    soup = BeautifulSoup(decoded, "html.parser")
+    visible = soup.get_text(" ", strip=True)
+    searchable = " | ".join((visible, decoded))
+
+    label = LAT_LON_LABEL.search(searchable)
+    if label:
+        tail = searchable[label.end() : label.end() + 240]
+        numbers = list(COORD_NUMBER.finditer(tail))
+        if len(numbers) >= 2:
+            latitude = _apply_direction(
+                float(numbers[0].group("number")),
+                numbers[0].group("direction"),
+            )
+            longitude = _apply_direction(
+                float(numbers[1].group("number")),
+                numbers[1].group("direction"),
+            )
+            if _valid_coordinates(latitude, longitude):
+                return latitude, longitude
+
+    separate = SEPARATE_LAT_LON_PATTERN.search(searchable)
+    if separate:
+        latitude = _apply_direction(
+            float(separate.group("lat")), separate.group("lat_dir")
+        )
+        longitude = _apply_direction(
+            float(separate.group("lon")), separate.group("lon_dir")
+        )
+        if _valid_coordinates(latitude, longitude):
+            return latitude, longitude
+
+    return None
+
+
+def _lat_lon_diagnostic(html: str) -> str:
+    """Return a short sanitized excerpt near a coordinate-looking header."""
+    decoded = html_module.unescape(html)
+    soup = BeautifulSoup(decoded, "html.parser")
+    text = core.normalize_space(soup.get_text(" ", strip=True))
+    match = re.search(r"(?i)lat.{0,20}lon|latitude|longitude|gps", text)
+    if not match:
+        return "no Lat/Lon-like label found in visible response text"
+    start = max(0, match.start() - 80)
+    end = min(len(text), match.end() + 180)
+    excerpt = text[start:end]
+    return re.sub(r"\s+", " ", excerpt)[:320]
 
 
 def _row_values(row: Any) -> list[str]:
@@ -135,7 +190,6 @@ def _row_values(row: Any) -> list[str]:
 
 
 def _is_listing_row(values: list[str], joined: str) -> bool:
-    """Identify an ordinary row from the all-incidents listing grid."""
     if LISTING_ROW_PATTERN.match(joined):
         return True
     if (
@@ -156,13 +210,13 @@ def parse_detail_lines(
     html: str,
     incident_number: str | None = None,
 ) -> tuple[str, ...]:
-    """Return only the selected incident's header and genuine CAD notes.
-
-    A row containing ``Lat/Lon:`` is retained before generic row filtering
-    because it is the authoritative location for the selected CHP call.
-    """
+    """Return the selected incident's canonical coordinate header and CAD notes."""
     soup = BeautifulSoup(html, "html.parser")
     lines: list[str] = []
+
+    coordinates = extract_detail_coordinates(html)
+    if coordinates:
+        lines.append(f"Lat/Lon: {coordinates[0]:.6f} / {coordinates[1]:.6f}")
 
     for row in soup.find_all("tr"):
         values = _row_values(row)
@@ -175,13 +229,10 @@ def parse_detail_lines(
             continue
         if "number of incidents:" in folded:
             continue
-
-        if extract_detail_coordinates(joined):
-            lines.append(joined)
-            continue
-
         if _is_listing_row(values, joined):
             continue
+        if extract_detail_coordinates(joined):
+            continue  # already retained above in a stable canonical form
 
         cleaned = list(values)
         if cleaned and cleaned[0].casefold() in {
@@ -220,7 +271,14 @@ def fetch_details(
     payload["ddlComCenter"] = "BCCC"
     response = session.post(core.BASE_URL, data=payload, timeout=timeout)
     response.raise_for_status()
-    return parse_detail_lines(response.text, incident_number)
+    lines = parse_detail_lines(response.text, incident_number)
+    if not extract_detail_coordinates(response.text):
+        detail.LOG.error(
+            "Incident %s detail response had no parseable Lat/Lon. Nearby response text: %s",
+            incident_number or "unknown",
+            _lat_lon_diagnostic(response.text),
+        )
+    return lines
 
 
 _ORIGINAL_PARSE_INCIDENTS = detail.parse_incidents
@@ -258,23 +316,13 @@ def parse_incidents(html: str) -> list[Any]:
 
 
 def match_incident(incident: Any, **kwargs: Any) -> Any:
-    """Match exclusively from the CHP detail-header coordinate.
-
-    Address geocoding is deliberately not used. Every selected CHP detail page
-    is expected to provide ``Lat/Lon:``; failure to parse it is surfaced as a
-    parser/data problem rather than silently substituting a third-party result.
-    """
+    """Match exclusively from CHP's selected-detail coordinate."""
     detail_text = " | ".join(getattr(incident, "details", ()))
     coordinates = extract_detail_coordinates(detail_text)
     if not coordinates:
-        detail.LOG.error(
-            "Incident %s matched the listing prefilter but its selected detail response "
-            "did not contain a parseable Lat/Lon header; address geocoding was not attempted",
-            getattr(incident, "number", "unknown"),
-        )
         return core.MatchResult(
             False,
-            "selected detail missing or unparseable Lat/Lon; address geocoding disabled",
+            "selected detail missing or unparseable CHP Lat/Lon",
             "low",
         )
 
