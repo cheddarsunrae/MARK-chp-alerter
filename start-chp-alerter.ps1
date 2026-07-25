@@ -3,10 +3,10 @@ Set-Location $PSScriptRoot
 
 $python = Join-Path $PSScriptRoot '.venv\Scripts\pythonw.exe'
 $consolePython = Join-Path $PSScriptRoot '.venv\Scripts\python.exe'
-$gui = Join-Path $PSScriptRoot 'chp_gui_crossplatform.py'
+$gui = Join-Path $PSScriptRoot 'chp_gui.py'
 
 if (-not (Test-Path $gui)) {
-    throw "CHP Alerter GUI not found: $gui"
+    throw "MARK GUI not found: $gui"
 }
 
 if (-not (Test-Path $python)) {
