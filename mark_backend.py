@@ -11,6 +11,7 @@ from typing import Any, Iterable
 
 import chp_detail_alert as detail
 import chp_jamul_alert as core
+import mark_detail_runtime
 from service_area_runtime import ServiceAreaError, apply_to_core
 
 MINIMUM_POLL_INTERVAL_SECONDS = 30.0
@@ -87,6 +88,7 @@ def configure_profile() -> None:
 def main(argv: Iterable[str] | None = None) -> int:
     core.DEFAULT_INTERVAL = MINIMUM_POLL_INTERVAL_SECONDS
     core.validate_args = validate_args
+    mark_detail_runtime.install()
     configure_profile()
     return detail.main(argv)
 
