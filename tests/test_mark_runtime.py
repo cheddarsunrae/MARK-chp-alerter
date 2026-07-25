@@ -19,20 +19,22 @@ from mark_detail_runtime import (
 class DetailParserTests(unittest.TestCase):
     def test_rejects_all_incidents_rows_and_keeps_chp_lat_lon_header(self) -> None:
         html = """
-        <html><body><table>
-          <tr><td>Location: SR94 / Otay Lakes Rd</td>
-              <td>Lat/Lon: 32.650000 / -116.930000</td></tr>
-          <tr><td>12:53 AM</td><td>UNIT ARRIVED ON SCENE</td></tr>
-          <tr><td>Details</td><td>0047</td><td>12:53 AM</td>
-              <td>Trfc Collision-1141 Enrt</td><td>Sr94 / Otay Lakes Rd</td>
-              <td>JSO</td><td>El Cajon</td></tr>
-          <tr><td>Details</td><td>0031</td><td>12:29 AM</td>
-              <td>Trfc Collision-1141 Enrt</td><td>I805 S / Camino De La Plaza No</td>
-              <td></td><td>San Diego</td></tr>
-        </table></body></html>
+        <html><body>
+          <div class="detail-header">Location: SR94 / Otay Lakes Rd</div>
+          <span>Lat/Lon: 32.650000 / -116.930000</span>
+          <table>
+            <tr><td>12:53 AM</td><td>UNIT ARRIVED ON SCENE</td></tr>
+            <tr><td>Details</td><td>0047</td><td>12:53 AM</td>
+                <td>Trfc Collision-1141 Enrt</td><td>Sr94 / Otay Lakes Rd</td>
+                <td>JSO</td><td>El Cajon</td></tr>
+            <tr><td>Details</td><td>0031</td><td>12:29 AM</td>
+                <td>Trfc Collision-1141 Enrt</td><td>I805 S / Camino De La Plaza No</td>
+                <td></td><td>San Diego</td></tr>
+          </table>
+        </body></html>
         """
         lines = parse_detail_lines(html, "0047")
-        self.assertTrue(any("Lat/Lon:" in line for line in lines))
+        self.assertIn("Lat/Lon: 32.650000 / -116.930000", lines)
         self.assertTrue(any("ARRIVED ON SCENE" in line for line in lines))
         self.assertFalse(any("Details | 0047" in line for line in lines))
         self.assertFalse(any("Camino De La Plaza" in line for line in lines))
@@ -49,6 +51,16 @@ class DetailParserTests(unittest.TestCase):
             (32.65, -116.93),
         )
 
+    def test_extracts_lat_lon_split_by_html_markup(self) -> None:
+        html = "<div>Lat/Lon:</div><span>32.650000</span><span>-116.930000</span>"
+        self.assertEqual(extract_detail_coordinates(html), (32.65, -116.93))
+
+    def test_extracts_cardinal_direction_coordinates(self) -> None:
+        self.assertEqual(
+            extract_detail_coordinates("Lat/Lon: 32.650000 N / 116.930000 W"),
+            (32.65, -116.93),
+        )
+
     def test_missing_lat_lon_does_not_fall_back_to_geocoder(self) -> None:
         incident = SimpleNamespace(
             number="0047",
@@ -59,7 +71,7 @@ class DetailParserTests(unittest.TestCase):
             result = match_incident(incident)
         coordinate_match.assert_not_called()
         self.assertFalse(result.relevant)
-        self.assertIn("address geocoding disabled", result.reason)
+        self.assertIn("missing or unparseable CHP Lat/Lon", result.reason)
 
     def test_lat_lon_is_checked_against_polygon(self) -> None:
         incident = SimpleNamespace(
@@ -67,8 +79,18 @@ class DetailParserTests(unittest.TestCase):
             incident_type="Trfc Collision-1141 Enrt",
             details=("Lat/Lon: 32.650000 / -116.930000",),
         )
-        expected = core.MatchResult(True, "inside configured polygon", "high", 32.65, -116.93, None)
-        with patch("mark_detail_runtime.core.coordinate_match", return_value=expected) as coordinate_match:
+        expected = core.MatchResult(
+            True,
+            "inside configured polygon",
+            "high",
+            32.65,
+            -116.93,
+            None,
+        )
+        with patch(
+            "mark_detail_runtime.core.coordinate_match",
+            return_value=expected,
+        ) as coordinate_match:
             result = match_incident(incident)
         coordinate_match.assert_called_once_with((32.65, -116.93))
         self.assertTrue(result.relevant)
