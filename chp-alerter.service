@@ -1,5 +1,5 @@
 [Unit]
-Description=CHP CAD alert monitor for a specified service area
+Description=MARK map-aware CHP CAD alert monitor
 Wants=network-online.target
 After=network-online.target
 
@@ -9,7 +9,7 @@ User=chp-alert
 Group=chp-alert
 WorkingDirectory=/opt/chp-alerter
 EnvironmentFile=/etc/chp-alerter.env
-ExecStart=/opt/chp-alerter/.venv/bin/python /opt/chp-alerter/chp_crossplatform.py
+ExecStart=/opt/chp-alerter/.venv/bin/python /opt/chp-alerter/mark_backend.py
 Restart=on-failure
 RestartSec=10
 
