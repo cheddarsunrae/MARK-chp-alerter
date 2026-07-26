@@ -14,6 +14,7 @@ from urllib.parse import urljoin
 import requests
 from bs4 import BeautifulSoup
 
+import chp_center_runtime
 import chp_detail_alert as detail
 import chp_jamul_alert as core
 import mark_detail_runtime
@@ -79,7 +80,7 @@ def fetch_details(
     payload["__LASTFOCUS"] = ""
 
     # Preserve the listing's selected communications center and other dropdowns.
-    payload.setdefault("ddlComCenter", "BCCC")
+    payload.setdefault("ddlComCenter", chp_center_runtime.configured_center_code())
     payload.setdefault("ddlSearches", "Choose One")
     payload.setdefault("ddlResources", "Choose One")
 
@@ -87,7 +88,7 @@ def fetch_details(
         action_url,
         data=payload,
         timeout=timeout,
-        headers={"Referer": core.BASE_URL},
+        headers={"Referer": chp_center_runtime.selected_center_url()},
     )
     response.raise_for_status()
 
@@ -96,11 +97,12 @@ def fetch_details(
         visible = BeautifulSoup(response.text, "html.parser").get_text(" ", strip=True)
         listing_again = "Number of Incidents:" in visible and "Lat/Lon" not in visible
         detail.LOG.error(
-            "Incident %s CHP postback returned %s; action=%s event=%s",
+            "Incident %s CHP postback returned %s; action=%s event=%s center=%s",
             incident_number or "unknown",
             "the incident listing again" if listing_again else "a response without Lat/Lon",
             action_url,
             argument,
+            chp_center_runtime.configured_center_code(),
         )
 
     return mark_detail_runtime.parse_detail_lines(response.text, incident_number)
