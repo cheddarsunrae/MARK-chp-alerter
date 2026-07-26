@@ -2,8 +2,8 @@
 """Reliable MARK GUI entry point.
 
 This initializes Tk before Tk variables are created, records otherwise-hidden
-pythonw startup failures, adds conservative boundary simplification, and exposes
-Station/profile AREA-prefix and type-fragment filters.
+pythonw startup failures, adds conservative and manual boundary cleanup, and
+exposes profile AREA-prefix and type-fragment filters.
 """
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from tkinter import messagebox, simpledialog, ttk
 
 import mark_app
 from chp_gui import BrandedMarkApp, PROFILE_MAP_DIR, PROFILES_FILE, slug, split_csv
-from geometry_utils import simplify_closed_polygon
+from geometry_utils import remove_shorter_path_between, simplify_closed_polygon
 from mark_app import DEFAULT_MAP, MarkApp, replace_polygon
 
 ROOT = Path(__file__).resolve().parent
@@ -33,6 +33,7 @@ class SafeMarkApp(BrandedMarkApp):
     def __init__(self) -> None:
         self.profiles = self._read_profiles()
         self.selected_vertex_index: int | None = None
+        self.direct_line_start_index: int | None = None
         self.zone_active = False
         self.zone_start_index: int | None = None
         self.zone_points: list[tuple[float, float]] = []
@@ -106,9 +107,9 @@ class SafeMarkApp(BrandedMarkApp):
         ttk.Label(
             body,
             text=(
-                "MARK compares only the first two characters. Known AREA values: "
+                "MARK compares only the first two characters. Known Border AREA values: "
                 + ", ".join(AREA_NAMES)
-                + ". Station 36 defaults: BC and El."
+                + ". Default profile values are BC and El."
             ),
             wraplength=570,
         ).pack(anchor="w", pady=(3, 4))
@@ -261,6 +262,35 @@ class SafeMarkApp(BrandedMarkApp):
             style="PanelHead.TLabel",
         ).pack(side="left", padx=8)
 
+        direct_bar = ttk.Frame(frame, style="Panel.TFrame")
+        direct_bar.pack(fill="x", pady=(5, 0))
+        ttk.Button(
+            direct_bar,
+            text="Set Line Start",
+            command=self.set_direct_line_start,
+        ).pack(side="left")
+        ttk.Button(
+            direct_bar,
+            text="Remove Between Start + Selected",
+            command=self.remove_between_direct_line,
+        ).pack(side="left", padx=4)
+        ttk.Button(
+            direct_bar,
+            text="Clear Line Start",
+            command=self.clear_direct_line_start,
+        ).pack(side="left")
+        self.direct_line_status = ttk.Label(
+            direct_bar,
+            text="Direct line: no start selected",
+            style="PanelHead.TLabel",
+        )
+        self.direct_line_status.pack(side="left", padx=8)
+
+    def reload_map(self, prompt: bool = True) -> None:
+        self.direct_line_start_index = None
+        super().reload_map(prompt=prompt)
+        self._refresh_direct_line_status()
+
     def simplify_boundary(self) -> None:
         if self.zone_active:
             messagebox.showinfo(
@@ -309,11 +339,94 @@ class SafeMarkApp(BrandedMarkApp):
 
         self.map_points = simplified
         self.selected_vertex_index = None
+        self.direct_line_start_index = None
         if hasattr(self, "anchor_status"):
             self.anchor_status.configure(text="Anchor: none")
+        self._refresh_direct_line_status()
         self._draw_polygon(False)
         self.append_log(
             f"Simplified boundary: removed {removed} waypoint(s) at {tolerance:g} m tolerance"
+        )
+
+    def set_direct_line_start(self) -> None:
+        if not getattr(self, "map_edit_enabled", tk.BooleanVar(value=False)).get():
+            messagebox.showinfo("Enable editing", "Enable map editing first.", parent=self)
+            return
+        if self.selected_vertex_index is None:
+            messagebox.showinfo(
+                "Select waypoint",
+                "Click the first waypoint before setting the direct-line start.",
+                parent=self,
+            )
+            return
+        self.direct_line_start_index = self.selected_vertex_index
+        self._refresh_direct_line_status()
+        self.append_log(f"Direct-line cleanup start set to waypoint {self.direct_line_start_index + 1}")
+
+    def clear_direct_line_start(self) -> None:
+        self.direct_line_start_index = None
+        self._refresh_direct_line_status()
+
+    def _refresh_direct_line_status(self) -> None:
+        if not hasattr(self, "direct_line_status"):
+            return
+        if self.direct_line_start_index is None:
+            self.direct_line_status.configure(text="Direct line: no start selected")
+            return
+        self.direct_line_status.configure(text=f"Direct line start: {self.direct_line_start_index + 1}")
+
+    def remove_between_direct_line(self) -> None:
+        if not getattr(self, "map_edit_enabled", tk.BooleanVar(value=False)).get():
+            messagebox.showinfo("Enable editing", "Enable map editing first.", parent=self)
+            return
+        if self.zone_active:
+            messagebox.showinfo(
+                "Finish extension first",
+                "Finish or cancel the active zone extension before direct-line cleanup.",
+                parent=self,
+            )
+            return
+        if self.direct_line_start_index is None:
+            messagebox.showinfo(
+                "No line start",
+                "Select the first waypoint and click Set Line Start.",
+                parent=self,
+            )
+            return
+        if self.selected_vertex_index is None:
+            messagebox.showinfo(
+                "No endpoint",
+                "Click the second waypoint before removing the points between them.",
+                parent=self,
+            )
+            return
+        start = self.direct_line_start_index
+        end = self.selected_vertex_index
+        try:
+            revised, removed, selected = remove_shorter_path_between(self.map_points, start, end)
+        except (IndexError, ValueError) as exc:
+            messagebox.showerror("Cannot remove between waypoints", str(exc), parent=self)
+            return
+        if not messagebox.askyesno(
+            "Remove intermediate waypoints?",
+            f"Remove {removed} waypoint(s) between waypoint {start + 1} and waypoint {end + 1} "
+            "and replace that boundary section with one direct line?\n\n"
+            "Review the resulting boundary before pressing Save Map.",
+            parent=self,
+        ):
+            return
+        self.map_points = revised
+        self.selected_vertex_index = selected
+        self.direct_line_start_index = None
+        self._refresh_direct_line_status()
+        if hasattr(self, "anchor_status"):
+            lat, lon = self.map_points[self.selected_vertex_index]
+            self.anchor_status.configure(
+                text=f"Anchor: {self.selected_vertex_index + 1} ({lat:.5f}, {lon:.5f})"
+            )
+        self._draw_polygon(False)
+        self.append_log(
+            f"Direct-line cleanup: removed {removed} waypoint(s) between old waypoints {start + 1} and {end + 1}"
         )
 
 
