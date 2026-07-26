@@ -3,31 +3,35 @@
 ## Repository
 
 - Project: **MARK — Map-Aware Roadway Knowledge**
-- Repository: `cheddarsunrae/chp-alerter`
+- Repository: `cheddarsunrae/MARK-chp-alerter`
+- Previous repository name/path used in older docs: `cheddarsunrae/chp-alerter`
 - Default branch: `main`
 - Primary Windows checkout: `C:\Users\Shane\Documents\GitHub\chp-alerter`
 - Windows launcher: `start-chp-alerter.ps1`
-- Linux launcher: `start-chp-alerter.sh`
-- GUI entry point: `mark_gui_entry.py`
+- macOS/Linux launcher: `start-chp-alerter.sh`
+- GUI entry point: `mark_update_entry.py`
 - Backend entry point: `mark_backend.py`
 - Minimum poll interval: **30 seconds**
 
-Before changing code, verify local and GitHub `main` HEAD and read `README.md`, `USER_GUIDE.md`, `MARK_GUI.md`, and `docs/STATEWIDE_NOTIFICATION_EXPANSION.md`.
+Before changing code, verify local and GitHub `main` HEAD and read `README.md`, `MARK_QUICK_START_GUIDE.md`, `MARK_TECHNICAL_USER_GUIDE.md`, `MARK_GUI.md`, and `docs/STATEWIDE_NOTIFICATION_EXPANSION.md`.
 
 ## Product purpose
 
-MARK polls the public CHP Border Communications Center CAD page, performs a fast listing prefilter, opens selected incident details through CHP's ASP.NET GridView postback, confirms location from the CAD-provided `Lat/Lon:` header, checks the active GeoJSON service-area polygon, and sends qualifying Pushover alerts containing the available notes.
+MARK polls the public CHP CAD page, performs a fast listing prefilter, opens selected incident details through CHP's ASP.NET GridView postback, confirms location from the CAD-provided `Lat/Lon:` header, checks the active GeoJSON service-area polygon, and sends qualifying alerts through configured notification providers.
 
 MARK is supplemental awareness, not an official dispatch or CAD system.
 
 ## Current accepted state
 
-As of 2026-07-25, the user confirmed that MARK **runs fine** after the final detail-postback correction.
+As of 2026-07-25, the user confirmed that MARK **runs fine** after the final detail-postback correction. Later work added update checks, multi-provider notification configuration, and generic service-area wording. Those later GUI/runtime changes still require local acceptance after pull.
 
-The accepted Windows application provides:
+The Windows application provides:
 
 - MARK branding and status cards;
-- monitor start/stop, test Pushover, dry poll, config/map reload;
+- monitor start/stop, dry poll, config/map reload;
+- update check and safe `git pull --ff-only` install controls;
+- visible notification-provider and alert-policy controls;
+- provider test button for selected providers;
 - live backend log;
 - OpenStreetMap service-area editor;
 - draggable waypoints;
@@ -39,23 +43,26 @@ The accepted Windows application provides:
 - successful selected-incident detail retrieval;
 - CAD `Lat/Lon:` polygon confirmation without address geocoding.
 
-Fedora support remains required, but the newest GUI changes have not been natively acceptance-tested on Fedora.
+macOS and Linux install paths exist, but native acceptance testing is still required.
 
 ## Runtime chain
 
 ```text
-start-chp-alerter.ps1
-  -> mark_gui_entry.py
-      -> chp_gui.py + mark_app.py
-          -> mark_backend.py
-              -> mark_detail_runtime.install()
-              -> mark_postback_runtime.install()
-              -> service_area_runtime.apply_to_core()
-              -> chp_detail_alert.main()
-                  -> chp_jamul_alert.main()
+platform launcher
+  -> mark_update_entry.py
+      -> mark_gui_entry.SafeMarkApp
+          -> chp_gui.py + mark_app.py
+              -> mark_backend.py
+                  -> mark_detail_runtime.install()
+                  -> mark_postback_runtime.install()
+                  -> notification_runtime.install()
+                  -> service_area_runtime.apply_to_core()
+                  -> mark_backend.install_generic_coordinate_match()
+                  -> chp_detail_alert.main()
+                      -> chp_jamul_alert.main()
 ```
 
-Patch installation order matters: `mark_postback_runtime.install()` must run after `mark_detail_runtime.install()` because it replaces the detail-fetch function with the browser-faithful implementation.
+Patch installation order matters. `mark_postback_runtime.install()` must run after `mark_detail_runtime.install()`. `install_generic_coordinate_match()` must run after the GeoJSON map has been applied so active polygon reasons use the loaded map/profile label instead of legacy Station 36 wording.
 
 ## Current configuration
 
@@ -67,40 +74,90 @@ CHP_ALERT_DETAIL_LOG_FILE=runtime/details.jsonl
 CHP_ALERT_RETENTION_HOURS=72
 CHP_ALERT_LOG_LEVEL=INFO
 CHP_ALERT_SERVICE_AREA_FILE=service_area.geojson
+CHP_ALERT_SERVICE_AREA_LABEL=
 CHP_ALERT_EXISTING=0
 CHP_ALERT_UPDATES=0
 CHP_ALERT_PROFILE=
 CHP_ALERT_AREA_PREFIXES=BC,El
 CHP_ALERT_TYPE_FRAGMENTS=Unk,1140,1141,Min,Maj,1179,1180,1178,un w,Repo
+NOTIFY_PROVIDERS=pushover
+ALERT_SEVERITY=critical
+ALERT_DELIVERY_MODE=until_acknowledged
+ALERT_RETRY_SECONDS=30
+ALERT_EXPIRE_SECONDS=1800
+ALERT_COOLDOWN_SECONDS=300
 PUSHOVER_APP_TOKEN=
 PUSHOVER_USER_KEY=
 PUSHOVER_PRIORITY=2
 PUSHOVER_RETRY_SECONDS=30
 PUSHOVER_EXPIRE_SECONDS=1800
 PUSHOVER_SOUND=alien
+NTFY_SERVER=https://ntfy.sh
+NTFY_TOPIC=
+NTFY_TOKEN=
+GOTIFY_URL=
+GOTIFY_APP_TOKEN=
+WEBHOOK_URL=
+WEBHOOK_BEARER_TOKEN=
 ```
 
-Legacy geocoder, ignored-area, and exact-incident-name keys may remain in older `.env` files, but the current authoritative filter keys are `CHP_ALERT_AREA_PREFIXES` and `CHP_ALERT_TYPE_FRAGMENTS`. MARK's active geographic decision uses CHP detail coordinates, not address geocoding.
+`CHP_ALERT_SERVICE_AREA_LABEL` controls human-readable match text. Leave it blank for generic wording such as `outside active service-area polygon`, or set it to a station/agency/profile name.
 
 Never commit `.env`, credentials, runtime logs, state files, captured CHP pages, or private operational profile content.
+
+## Notifications
+
+`notification_runtime.py` currently supports:
+
+- `pushover`
+- `ntfy`
+- `gotify`
+- `webhook`
+
+The GUI exposes `NOTIFY_PROVIDERS`, severity, delivery mode, retry/expiration, ntfy settings, Gotify settings, webhook settings, and a selected-provider test button. Multiple providers are comma-separated.
+
+Severity values:
+
+- `low`
+- `medium`
+- `high`
+- `critical`
+
+Delivery values:
+
+- `notify_once`
+- `notify_on_update`
+- `until_acknowledged`
+- `until_expiration`
+
+Provider capability matters. MARK must not claim acknowledgement for providers that cannot report acknowledgement state. Current non-Pushover providers send delivery notifications and log capability warnings for acknowledgement-like modes.
+
+## Service-area wording fix
+
+The active geographic decision uses the loaded GeoJSON polygon. Legacy Station 36 language remains in some historical filenames/comments, but active match reasons are patched in `mark_backend.install_generic_coordinate_match()` and should now read from the configured service-area label or generic active-service-area wording.
+
+Expected examples:
+
+```text
+inside active service-area polygon
+outside active service-area polygon
+inside Jamul Fire Station 36 service-area polygon
+outside Jamul Fire Station 36 service-area polygon
+```
 
 ## Fast first-pass filtering
 
 ### AREA
 
-Known CHP `AREA` possibilities:
+MARK compares only the first two characters of the CHP `AREA` value, case-insensitively. Example Border-area profile:
 
-- `San Diego`
-- `Temecula`
-- `Oceanside`
-- `El Cajon`
-- `BC`
-
-MARK compares only the first two characters, case-insensitively. Station 36 defaults to `BC,El`, retaining Border Communications and El Cajon rows while rejecting San Diego, Temecula, and Oceanside before detail fetches.
+```dotenv
+CHP_ALERT_AREA_PREFIXES=BC,El
+```
 
 ### Type
 
-MARK searches the CHP `Type` column for these case-insensitive fragments:
+MARK searches the CHP `Type` column for case-insensitive fragments:
 
 ```text
 Unk
@@ -117,181 +174,56 @@ Repo
 
 This is substring-based, not exact-name matching.
 
-## Profiles
-
-Profiles save:
-
-- a private GeoJSON map copy;
-- AREA prefixes to monitor;
-- Type fragments to monitor;
-- poll interval;
-- alert-existing behavior;
-- alert-update behavior.
-
-Storage:
-
-```text
-profiles/profiles.json
-profiles/maps/
-```
-
-Restart the backend after loading or changing a profile.
-
 ## Confirmed incident-detail defects and fixes
 
 ### Defect 1: unrelated incident rows leaked into details
 
-CHP detail responses can include the selected incident panel together with the complete all-incidents listing. The original parser accepted every timestamped listing row, causing unrelated calls to appear in each incident's detail array.
-
-`mark_detail_runtime.py` now:
-
-- rejects ordinary all-incidents rows;
-- retains genuine CAD/operator notes;
-- extracts `Lat/Lon:` from the entire response, not only table rows;
-- stores the coordinate as a canonical detail line;
-- uses the CAD coordinate directly against the service-area polygon;
-- does not fall back to address geocoding.
+CHP detail responses can include the selected incident panel together with the complete all-incidents listing. `mark_detail_runtime.py` rejects ordinary listing rows, retains genuine CAD/operator notes, extracts `Lat/Lon:` from the entire response, stores the coordinate as a canonical detail line, and uses the CAD coordinate directly against the service-area polygon.
 
 ### Defect 2: detail request returned the listing again
 
-A live capture of incident `0047` proved the saved “detail” response was actually the ordinary nine-row incident listing. The request had submitted only ASP.NET hidden fields and the GridView event.
-
-The browser submits additional successful form controls and posts to the form's declared action URL.
-
-`mark_postback_runtime.py` now:
-
-1. locates the CHP form;
-2. collects successful `input`, `select`, and `textarea` controls;
-3. omits disabled and non-successful controls;
-4. preserves `ddlComCenter`, `ddlSearches`, and `ddlResources`;
-5. posts to the form's actual action URL;
-6. sends `__EVENTTARGET=gvIncidents` and the row's `Select$n` event argument;
-7. passes the selected detail response to `mark_detail_runtime.py`.
-
-This was the final live blocker. The user confirmed the resulting application runs correctly.
-
-## Alert logic
-
-For each listing incident:
-
-1. Reject it if its AREA does not start with an allowed two-character prefix.
-2. Reject it if its Type contains none of the configured fragments.
-3. Submit the complete browser-faithful GridView detail postback.
-4. Reject unrelated all-incidents rows in the returned detail response.
-5. Retain the selected call's coordinate header and CAD notes.
-6. Parse the CHP `Lat/Lon:` coordinate.
-7. Check that coordinate against the active GeoJSON polygon.
-8. Send a Pushover alert when relevant and eligible under state/update rules.
-9. Write detail changes to JSONL.
-
-Alert-promoting codes: `11-78`, `11-79`, `11-80`, `11-81`.
-
-Log-only code: `11-82`.
+A live capture of incident `0047` proved the saved detail response was actually the ordinary incident listing. `mark_postback_runtime.py` now performs browser-faithful ASP.NET form submission: action URL, successful controls, dropdowns, `__EVENTTARGET=gvIncidents`, and the selected row's `Select$n` argument.
 
 ## Map workflow
 
-### Load a map
+Use **Configuration → Service Area File → …** and choose a `.geojson` or `.json` Polygon. GeoJSON stores `[longitude, latitude]`; MARK internally uses `(latitude, longitude)`.
 
-Use **Configuration → Service Area File → …** and choose a `.geojson` or `.json` file containing a Polygon. GeoJSON stores `[longitude, latitude]`; MARK internally uses `(latitude, longitude)`.
+**Simplify Boundary** removes near-collinear waypoints. Default tolerance is 25 m. Review before saving because excessive tolerance can move the operational boundary.
 
-### Extend a zone
+## Statewide CHP requirements
 
-1. Enable editing.
-2. Select an existing waypoint; it turns red.
-3. Click **Start Extension**.
-4. Add at least two clicks.
-5. The final click is only an endpoint hint.
-6. Click **Finish Extension**.
-7. MARK replaces the final hint with the nearest old waypoint and replaces the shorter old boundary path.
-8. Review and save.
+The statewide expansion is documented and partially seeded:
 
-### Simplify a boundary
-
-`geometry_utils.py` implements `simplify_closed_polygon`. `mark_gui_entry.py` exposes **Simplify Boundary**.
-
-The simplifier removes a waypoint only when it lies within the chosen tolerance of the direct segment between its immediate neighbours. It repeats until stable and never reduces below three vertices.
-
-Default tolerance: 25 m.
-
-This improves readability and editing reliability. It is not a meaningful performance optimization for MARK's small polygons. Excessive tolerance can move the operational boundary, so review before Save Map.
-
-## Approved next phase: statewide and multi-channel expansion
-
-The user reported significant firefighter and medic interest and approved a larger productization phase.
-
-### Required notification providers
-
-1. Pushover
-2. ntfy
-3. Gotify
-4. Generic JSON webhook
-5. Later candidates: email, Teams, Slack, Discord, SMS
-
-### Required common alert policies
-
-- Severity: low, medium, high, critical
-- Notify once
-- Notify on important update
-- Repeat until acknowledged
-- Repeat until expiration
-- Retry interval
-- Expiration time
-- Duplicate cooldown
-- Quiet hours and critical override
-- Escalation after no acknowledgement
-- Per-call-type rules
-- Per-profile recipient routing
-
-Persistent-until-acknowledged must not be claimed for a provider unless MARK can actually track acknowledgement. Pushover supports receipts; other providers may require MARK's own acknowledgement service.
-
-### Statewide CHP requirements
-
-- Replace the hard-coded Border center with one or more profile-selected communications centers.
-- Parse the live CHP center dropdown dynamically.
-- Seed from `data/chp_communications_centers.json`.
-- Store incident identity with the center code to prevent number collisions.
-- Discover and retain AREA values observed per center.
-- Seed AREA mappings from official CHP Area Offices by Dispatch Center sources.
-- Keep per-center health and isolate one center's failure from the others.
-- Support center-specific maps and AREA allowlists.
-
-The captured live dropdown contained 25 center selections. See `docs/STATEWIDE_NOTIFICATION_EXPANSION.md` for the code list, proposed configuration, and implementation order.
-
-### Implementation order
-
-1. Extract Pushover behind a provider interface.
-2. Add ntfy.
-3. Add generic webhook.
-4. Add Gotify.
-5. Add common severity and one-time/update policies.
-6. Add durable alert receipts and acknowledgement state.
-7. Add persistent and escalation policies.
-8. Add dynamic statewide center selection.
-9. Add AREA discovery and catalog maintenance.
-10. Update GUI, tests, user guide, README, and this handoff.
-
-These expansion requirements are documented but not yet implemented in the accepted runtime.
+- dynamic communications-center selection is still future work;
+- `data/chp_communications_centers.json` contains the live CAD center catalog;
+- current production path remains one selected center/profile at a time unless further code is added.
 
 ## File map
 
-- `start-chp-alerter.ps1` — Windows venv, dependency, syntax preflight, GUI launch
-- `start-chp-alerter.sh` — Linux launcher
+- `start-chp-alerter.ps1` — Windows venv, dependency, syntax preflight, update-aware GUI launch
+- `start-chp-alerter.sh` — macOS/Linux launcher
+- `Install MARK - Windows.bat` — nontechnical Windows installer
+- `Install MARK - macOS.command` — nontechnical macOS installer
+- `install-mark-linux.sh` — Linux installer and desktop entry creator
+- `mark_update_entry.py` — update-aware GUI entry plus provider/policy controls
+- `update_runtime.py` — safe Git update discovery and fast-forward installation
 - `mark_gui_entry.py` — safe Tk startup, profile filter manager, simplification UI
 - `chp_gui.py` — branding, zone-extension editor, waypoint dragging
 - `mark_app.py` — dashboard base, subprocess management, shared config/map functions
-- `mark_backend.py` — 30-second policy, profile/map initialization, runtime patch order
+- `mark_backend.py` — 30-second policy, profile/map initialization, runtime patch order, generic service-area labels
 - `mark_postback_runtime.py` — browser-faithful CHP selected-detail submission
 - `mark_detail_runtime.py` — AREA/type prefilter, strict parser, CAD-coordinate matching
+- `notification_runtime.py` — Pushover, ntfy, Gotify, and webhook adapters
 - `chp_detail_alert.py` — legacy detail model, codes, JSONL logging, alert formatting
-- `chp_jamul_alert.py` — base page fetch, state, polygon match, Pushover
+- `chp_jamul_alert.py` — base page fetch, state, polygon helper functions, legacy Pushover sender
 - `service_area_runtime.py` — GeoJSON validation and polygon installation
 - `geometry_utils.py` — near-collinear waypoint removal
 - `tests/test_mark_runtime.py` — parser, coordinate, filter, and simplification regression tests
-- `USER_GUIDE.md` — nontechnical operator guide
-- `docs/STATEWIDE_NOTIFICATION_EXPANSION.md` — approved expansion specification
-- `data/chp_communications_centers.json` — live CAD center catalog
+- `tests/test_notification_runtime.py` — notification policy/provider tests
+- `tests/test_update_runtime.py` — update discovery/refusal tests
+- `MARK_QUICK_START_GUIDE.md` — nontechnical installation/use guide
+- `MARK_TECHNICAL_USER_GUIDE.md` — technical guide
 - `README.md` — operator/developer overview
-- `MARK_GUI.md` — GUI instructions
 - `HANDOFF.md` — this canonical continuation document
 
 ## Validation commands
@@ -311,6 +243,9 @@ git pull
   .\chp_detail_alert.py `
   .\mark_detail_runtime.py `
   .\mark_postback_runtime.py `
+  .\notification_runtime.py `
+  .\update_runtime.py `
+  .\mark_update_entry.py `
   .\mark_backend.py `
   .\chp_gui.py `
   .\mark_gui_entry.py `
@@ -320,7 +255,10 @@ git pull
 ### Unit tests
 
 ```powershell
-.\.venv\Scripts\python.exe -m unittest .\tests\test_mark_runtime.py -v
+.\.venv\Scripts\python.exe -m unittest `
+  .\tests\test_mark_runtime.py `
+  .\tests\test_notification_runtime.py `
+  .\tests\test_update_runtime.py -v
 ```
 
 ### Safe live dry poll
@@ -333,7 +271,7 @@ git pull
   --log-level DEBUG
 ```
 
-Expected successful location reasons include `CHP detail Lat/Lon`.
+Expected successful location reasons include `CHP detail Lat/Lon` and service-area wording should no longer be hard-coded to Station 36 unless the profile/label explicitly says so.
 
 ### GUI acceptance
 
@@ -341,39 +279,28 @@ Expected successful location reasons include `CHP detail Lat/Lon`.
 .\start-chp-alerter.ps1
 ```
 
-Confirmed on Windows by the user:
+Confirm after this update:
 
 - GUI launches;
 - selected map loads;
-- configuration saves;
+- Notification Providers and Alert Policy panel is visible;
+- ntfy/Gotify/webhook fields are visible;
+- provider test button works for the selected provider(s);
+- map/profile label changes active match wording;
 - monitor starts;
 - fast prefilter runs;
 - browser-faithful detail selection works;
-- application runs normally.
+- active match reasons do not say Station 36 unless configured as the label.
 
 ## Remaining work
 
-### Existing release hardening
-
-1. Native Fedora GUI acceptance.
-2. Add a committed sanitized full ASP.NET form fixture for postback-control tests.
-3. Add a unit test specifically for `successful_form_controls()` and form-action resolution.
-4. Add CI for syntax and unit tests.
-
-### Approved expansion
-
-Implement the statewide and multi-provider phase described above and in `docs/STATEWIDE_NOTIFICATION_EXPANSION.md`.
-
-## Known risks
-
-- CHP can change its public HTML or ASP.NET postback structure.
-- Type fragments are broad by design and may require profile-specific refinement.
-- AREA matching uses only the first two characters by design.
-- Pushover priority 2 repeats until acknowledged or expiration.
-- Running processes do not automatically reload maps/profiles.
-- Aggressive simplification can alter the service boundary.
-- Statewide polling must be rate-limited and fault-isolated.
-- Provider capabilities differ; common alert policy translation must be explicit.
+1. Native Windows acceptance of the latest provider-GUI and service-area-label changes.
+2. Native macOS GUI acceptance.
+3. Native Linux/Fedora GUI acceptance.
+4. Add GUI-level tests if a GUI test harness is introduced.
+5. Add dynamic statewide communications-center selector and per-center AREA discovery.
+6. Add signed/versioned release packages for ZIP-only nontechnical users.
+7. Add durable acknowledgement service if non-Pushover providers need true acknowledgement tracking.
 
 ## User preferences for future work
 
@@ -382,8 +309,7 @@ Implement the statewide and multi-provider phase described above and in `docs/ST
 - Do not claim native testing that was not performed.
 - Windows PowerShell is primary; Fedora support must remain intact.
 - Keep launchers straightforward.
-- Documentation is part of completion, not optional cleanup.
 
 ## Continuation point
 
-The accepted Border/Pushover Windows implementation is complete and live-tested. The repository now also contains a nontechnical user guide, a 25-center CHP catalog, and the approved statewide/multi-provider expansion specification. The next coding thread should start with notification-provider abstraction, add ntfy, then move through acknowledgement policy and dynamic statewide center selection in the documented order.
+The latest work closes the two issues the user caught: active service-area match reasons no longer use hard-coded Station 36 text, and alternate notification providers are now visible/configurable in the GUI. Start the next thread by pulling `main`, running syntax/tests, launching the GUI, and checking the new provider panel plus service-area match wording locally.
