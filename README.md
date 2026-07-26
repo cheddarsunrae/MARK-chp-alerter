@@ -54,7 +54,7 @@ Automatic installation is intentionally conservative:
 
 ZIP-only installations receive a clear manual-update message. A future signed release-package channel is still needed for fully automatic updates on non-Git installations.
 
-## Notification runtime
+## Notification runtime and GUI controls
 
 `notification_runtime.py` provides a common provider interface for:
 
@@ -62,6 +62,8 @@ ZIP-only installations receive a clear manual-update message. A future signed re
 - ntfy
 - Gotify
 - Generic JSON webhooks
+
+The GUI now exposes the provider and alert-policy fields directly under **Notification Providers and Alert Policy**. The visible settings include provider selection, severity, delivery mode, retry/expiration, ntfy server/topic/token, Gotify URL/token, webhook URL/token, and an optional map/profile label.
 
 Common policy values:
 
@@ -77,6 +79,18 @@ Severity values are `low`, `medium`, `high`, and `critical`. Delivery values are
 
 Provider capability matters. MARK does not claim acknowledgement for providers that cannot report it.
 
+## Service-area wording
+
+The active map is always the configured GeoJSON file. Legacy Station 36 text has been removed from the active coordinate-match reason. Logs now use the configured label when present or generic wording such as `outside active service-area polygon`.
+
+Set this when a profile should have a human-readable name in logs:
+
+```dotenv
+CHP_ALERT_SERVICE_AREA_LABEL=Jamul Fire Station 36
+```
+
+Leave it blank for generic wording.
+
 ## Fast filtering pipeline
 
 MARK avoids fetching details for every CHP row.
@@ -85,7 +99,7 @@ MARK avoids fetching details for every CHP row.
 
 Only the first two characters of the CHP `AREA` value are compared, case-insensitively.
 
-Station 36 defaults:
+Example Border-area profile:
 
 ```dotenv
 CHP_ALERT_AREA_PREFIXES=BC,El
@@ -150,7 +164,7 @@ chmod +x install-mark-linux.sh
 
 ## Important files
 
-- `mark_update_entry.py` — GUI update notification and install controls
+- `mark_update_entry.py` — GUI update, notification-provider, and alert-policy controls
 - `update_runtime.py` — safe Git update discovery and fast-forward installation
 - `mark_gui_entry.py` — safe GUI entry, profiles, filters, map simplification
 - `mark_backend.py` — runtime installation order and profile initialization
