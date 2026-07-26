@@ -1,0 +1,25 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "San Diego Region Smoke-Test Boundary",
+        "purpose": "Testing only - broad polygon intended to confirm MARK alerts on qualifying CHP incidents anywhere in the San Diego/Border operating region.",
+        "warning": "Not an operational service-area boundary. Do not use for real station response filtering."
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [-117.7000, 32.4800],
+            [-116.0000, 32.4800],
+            [-116.0000, 33.5500],
+            [-117.7000, 33.5500],
+            [-117.7000, 32.4800]
+          ]
+        ]
+      }
+    }
+  ]
+}
