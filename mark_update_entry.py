@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""MARK GUI entry point with updates and provider-neutral notification controls."""
+"""MARK GUI entry point with updates and visible notification controls."""
 from __future__ import annotations
 
 import json
@@ -26,10 +26,11 @@ PROVIDERS = ("pushover", "ntfy", "gotify", "webhook")
 
 
 class UpdatingMarkApp(mark_gui_entry.SafeMarkApp):
-    """Add update checks and visible multi-provider notification controls."""
+    """Add update checks and obvious multi-provider notification controls."""
 
     def __init__(self) -> None:
         self.update_status_text: tk.StringVar | None = None
+        self.notification_status_text: tk.StringVar | None = None
         self._update_check_running = False
         self._update_install_running = False
         self._notification_test_running = False
@@ -64,48 +65,182 @@ class UpdatingMarkApp(mark_gui_entry.SafeMarkApp):
         for key, value in defaults.items():
             self.vars.setdefault(key, tk.StringVar(value=value))
 
+    def _build_toolbar(self, root: ttk.Frame) -> None:
+        super()._build_toolbar(root)
+        for widget in self._walk_children(root):
+            if isinstance(widget, ttk.Button):
+                try:
+                    text = str(widget.cget("text"))
+                except tk.TclError:
+                    continue
+                if "Test Pushover" in text:
+                    widget.configure(text="➤  Test Notifications", command=self.test_selected_notifications)
+
+    def _walk_children(self, parent: tk.Widget) -> list[tk.Widget]:
+        children: list[tk.Widget] = []
+        for child in parent.winfo_children():
+            children.append(child)
+            children.extend(self._walk_children(child))
+        return children
+
     def _build_config(self, frame: ttk.Frame) -> None:
         super()._build_config(frame)
         self._ensure_notification_vars()
-        self._build_notification_panel(frame)
+        self._insert_notification_summary(frame)
         self._build_update_panel(frame)
 
-    def _build_notification_panel(self, frame: ttk.Frame) -> None:
-        panel = ttk.LabelFrame(frame, text="Notification Providers and Alert Policy", padding=8)
-        panel.pack(fill="x", pady=(10, 0))
+    def _insert_notification_summary(self, frame: ttk.Frame) -> None:
+        self.notification_status_text = tk.StringVar(value=self._notification_summary())
+        panel = ttk.LabelFrame(frame, text="Notifications", padding=8)
+        existing = frame.pack_slaves()
+        if existing:
+            panel.pack(fill="x", pady=(0, 10), before=existing[0])
+        else:
+            panel.pack(fill="x", pady=(0, 10))
         ttk.Label(
             panel,
-            text=(
-                "Choose one or more providers. Separate multiple providers with commas: "
-                "pushover, ntfy, gotify, webhook. Pushover credentials are in the main "
-                "configuration fields above."
-            ),
-            wraplength=360,
-        ).grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 6))
+            textvariable=self.notification_status_text,
+            wraplength=350,
+        ).pack(anchor="w", fill="x")
+        buttons = ttk.Frame(panel)
+        buttons.pack(fill="x", pady=(7, 0))
+        ttk.Button(
+            buttons,
+            text="Notification Settings",
+            command=self.open_notification_settings,
+        ).pack(side="left", padx=(0, 5))
+        ttk.Button(
+            buttons,
+            text="Test Selected Providers",
+            command=self.test_selected_notifications,
+        ).pack(side="left")
 
-        def add_field(row: int, key: str, label: str, *, secret: bool = False, values: tuple[str, ...] | None = None) -> None:
-            ttk.Label(panel, text=label).grid(row=row, column=0, sticky="w", pady=3)
+    def _notification_summary(self) -> str:
+        try:
+            providers = ", ".join(self._providers()) or "none"
+            severity = self.vars.get("ALERT_SEVERITY", tk.StringVar(value="critical")).get()
+            delivery = self.vars.get("ALERT_DELIVERY_MODE", tk.StringVar(value="until_acknowledged")).get()
+            return f"Providers: {providers} • Severity: {severity} • Delivery: {delivery}"
+        except Exception:
+            return "Providers: not configured"
+
+    def _refresh_notification_summary(self) -> None:
+        if self.notification_status_text is not None:
+            self.notification_status_text.set(self._notification_summary())
+
+    def open_notification_settings(self) -> None:
+        self._ensure_notification_vars()
+        dialog = tk.Toplevel(self)
+        dialog.title("MARK Notification Settings")
+        dialog.geometry("780x720")
+        dialog.minsize(700, 620)
+        dialog.transient(self)
+        dialog.grab_set()
+
+        outer = ttk.Frame(dialog, padding=12)
+        outer.pack(fill="both", expand=True)
+        ttk.Label(
+            outer,
+            text="Choose one or more alert providers and how MARK should treat urgent alerts.",
+            style="PanelHead.TLabel",
+            wraplength=730,
+        ).pack(anchor="w", pady=(0, 8))
+
+        notebook = ttk.Notebook(outer)
+        notebook.pack(fill="both", expand=True)
+
+        policy = ttk.Frame(notebook, padding=12)
+        pushover = ttk.Frame(notebook, padding=12)
+        ntfy = ttk.Frame(notebook, padding=12)
+        gotify = ttk.Frame(notebook, padding=12)
+        webhook = ttk.Frame(notebook, padding=12)
+        notebook.add(policy, text="Policy")
+        notebook.add(pushover, text="Pushover")
+        notebook.add(ntfy, text="ntfy")
+        notebook.add(gotify, text="Gotify")
+        notebook.add(webhook, text="Webhook")
+
+        def add_field(parent: ttk.Frame, row: int, key: str, label: str, *, secret: bool = False, values: tuple[str, ...] | None = None, width: int = 48) -> None:
+            ttk.Label(parent, text=label).grid(row=row, column=0, sticky="w", pady=5)
             if values:
-                widget = ttk.Combobox(panel, textvariable=self.vars[key], values=values, state="readonly")
+                widget = ttk.Combobox(parent, textvariable=self.vars[key], values=values, state="readonly", width=width)
             else:
-                widget = ttk.Entry(panel, textvariable=self.vars[key], show="•" if secret else "")
-            widget.grid(row=row, column=1, columnspan=2, sticky="ew", padx=(8, 0), pady=3)
+                widget = ttk.Entry(parent, textvariable=self.vars[key], show="•" if secret else "", width=width)
+            widget.grid(row=row, column=1, sticky="ew", padx=(10, 0), pady=5)
+            parent.columnconfigure(1, weight=1)
 
-        add_field(1, "NOTIFY_PROVIDERS", "Providers")
-        add_field(2, "ALERT_SEVERITY", "Severity", values=SEVERITIES)
-        add_field(3, "ALERT_DELIVERY_MODE", "Delivery Mode", values=DELIVERY_MODES)
-        add_field(4, "ALERT_RETRY_SECONDS", "Retry Seconds")
-        add_field(5, "ALERT_EXPIRE_SECONDS", "Expire Seconds")
-        add_field(6, "CHP_ALERT_SERVICE_AREA_LABEL", "Map/Profile Label")
-        add_field(7, "NTFY_SERVER", "ntfy Server")
-        add_field(8, "NTFY_TOPIC", "ntfy Topic")
-        add_field(9, "NTFY_TOKEN", "ntfy Token", secret=True)
-        add_field(10, "GOTIFY_URL", "Gotify URL")
-        add_field(11, "GOTIFY_APP_TOKEN", "Gotify App Token", secret=True)
-        add_field(12, "WEBHOOK_URL", "Webhook URL")
-        add_field(13, "WEBHOOK_BEARER_TOKEN", "Webhook Bearer Token", secret=True)
-        panel.columnconfigure(1, weight=1)
-        ttk.Button(panel, text="Test Selected Providers", command=self.test_selected_notifications).grid(row=14, column=0, columnspan=3, sticky="ew", pady=(8, 0))
+        ttk.Label(
+            policy,
+            text="Providers may be combined by separating them with commas, for example: pushover,ntfy",
+            wraplength=680,
+        ).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 10))
+        add_field(policy, 1, "NOTIFY_PROVIDERS", "Providers")
+        add_field(policy, 2, "ALERT_SEVERITY", "Severity", values=SEVERITIES)
+        add_field(policy, 3, "ALERT_DELIVERY_MODE", "Delivery Mode", values=DELIVERY_MODES)
+        add_field(policy, 4, "ALERT_RETRY_SECONDS", "Retry Seconds")
+        add_field(policy, 5, "ALERT_EXPIRE_SECONDS", "Expire Seconds")
+        add_field(policy, 6, "ALERT_COOLDOWN_SECONDS", "Cooldown Seconds")
+        add_field(policy, 7, "CHP_ALERT_SERVICE_AREA_LABEL", "Optional Map/Profile Label")
+        ttk.Label(
+            policy,
+            text=(
+                "Leave the label blank for generic log wording such as outside active service-area polygon. "
+                "Set it only when you intentionally want a station, agency, or profile name in logs."
+            ),
+            wraplength=680,
+        ).grid(row=8, column=0, columnspan=2, sticky="w", pady=(8, 0))
+
+        add_field(pushover, 0, "PUSHOVER_APP_TOKEN", "App Token", secret=True)
+        add_field(pushover, 1, "PUSHOVER_USER_KEY", "User/Group Key", secret=True)
+        add_field(pushover, 2, "PUSHOVER_SOUND", "Sound")
+        add_field(pushover, 3, "PUSHOVER_PRIORITY", "Legacy Priority")
+        add_field(pushover, 4, "PUSHOVER_RETRY_SECONDS", "Legacy Retry Seconds")
+        add_field(pushover, 5, "PUSHOVER_EXPIRE_SECONDS", "Legacy Expire Seconds")
+        ttk.Label(
+            pushover,
+            text="Persistent delivery modes use Pushover emergency-style retry and expiration settings.",
+            wraplength=680,
+        ).grid(row=6, column=0, columnspan=2, sticky="w", pady=(8, 0))
+
+        add_field(ntfy, 0, "NTFY_SERVER", "Server")
+        add_field(ntfy, 1, "NTFY_TOPIC", "Topic")
+        add_field(ntfy, 2, "NTFY_TOKEN", "Bearer Token", secret=True)
+        ttk.Label(
+            ntfy,
+            text="Use a private hard-to-guess topic or a self-hosted ntfy server for operational use.",
+            wraplength=680,
+        ).grid(row=3, column=0, columnspan=2, sticky="w", pady=(8, 0))
+
+        add_field(gotify, 0, "GOTIFY_URL", "Gotify URL")
+        add_field(gotify, 1, "GOTIFY_APP_TOKEN", "App Token", secret=True)
+
+        add_field(webhook, 0, "WEBHOOK_URL", "Webhook URL")
+        add_field(webhook, 1, "WEBHOOK_BEARER_TOKEN", "Bearer Token", secret=True)
+        ttk.Label(
+            webhook,
+            text="MARK sends a JSON payload with source, title, message, URL, severity, delivery mode, retry, and expiration.",
+            wraplength=680,
+        ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(8, 0))
+
+        buttons = ttk.Frame(outer)
+        buttons.pack(fill="x", pady=(10, 0))
+        ttk.Button(
+            buttons,
+            text="Save Settings",
+            command=lambda: self._save_notification_dialog(dialog),
+        ).pack(side="left", padx=(0, 6))
+        ttk.Button(
+            buttons,
+            text="Test Selected Providers",
+            command=self.test_selected_notifications,
+        ).pack(side="left", padx=(0, 6))
+        ttk.Button(buttons, text="Close", command=dialog.destroy).pack(side="right")
+
+    def _save_notification_dialog(self, dialog: tk.Toplevel) -> None:
+        if self.save_configuration(quiet=True):
+            self._refresh_notification_summary()
+            messagebox.showinfo("Saved", "Notification settings saved.", parent=dialog)
+            dialog.destroy()
 
     def _build_update_panel(self, frame: ttk.Frame) -> None:
         self.update_status_text = tk.StringVar(value="Update status: not checked")
@@ -134,7 +269,11 @@ class UpdatingMarkApp(mark_gui_entry.SafeMarkApp):
 
     def _providers(self, values: dict[str, str] | None = None) -> list[str]:
         source = values or {key: var.get() for key, var in self.vars.items()}
-        providers = [item.strip().casefold() for item in source.get("NOTIFY_PROVIDERS", "").replace(";", ",").split(",") if item.strip()]
+        providers = [
+            item.strip().casefold()
+            for item in source.get("NOTIFY_PROVIDERS", "").replace(";", ",").split(",")
+            if item.strip()
+        ]
         return list(dict.fromkeys(providers))
 
     def collect_configuration(self) -> dict[str, str]:
@@ -176,6 +315,7 @@ class UpdatingMarkApp(mark_gui_entry.SafeMarkApp):
         except (OSError, ValueError) as exc:
             messagebox.showerror("Configuration error", str(exc), parent=self)
             return False
+        self._refresh_notification_summary()
         self.append_log("Saved MARK configuration")
         if not quiet:
             messagebox.showinfo("Saved", "Configuration saved.", parent=self)
