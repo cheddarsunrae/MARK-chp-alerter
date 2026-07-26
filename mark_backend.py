@@ -49,7 +49,7 @@ def validate_args(args: Any) -> None:
         raise SystemExit("--timeout must be positive")
     if bool(args.pushover_token) != bool(args.pushover_user):
         raise SystemExit(
-            "Pushover requires both PUSHOVER_APP_TOKEN and PUSHOVER_USER_KEY"
+            "Pushover requires both PUSHOVER_APP_TOKEN and PUSHOVER_USER_KEY when Pushover is configured"
         )
     if args.test_pushover and not args.pushover_token:
         raise SystemExit("--test-pushover requires Pushover credentials")
@@ -68,7 +68,57 @@ def validate_args(args: Any) -> None:
         raise SystemExit(str(exc)) from exc
 
 
-def configure_profile() -> None:
+def _service_area_reason_label(profile: str) -> str:
+    raw = (
+        os.getenv("CHP_ALERT_SERVICE_AREA_LABEL", "").strip()
+        or profile.strip()
+        or "active service-area polygon"
+    )
+    folded = raw.casefold()
+    if "polygon" in folded or "boundary" in folded:
+        return raw
+    if "service-area" in folded or "service area" in folded:
+        return f"{raw} polygon"
+    return f"{raw} service-area polygon"
+
+
+def install_generic_coordinate_match(label: str) -> None:
+    """Patch legacy coordinate matching so logs use the active profile/map label."""
+
+    def coordinate_match(coordinates: tuple[float, float]) -> Any:
+        latitude, longitude = coordinates
+        point = (latitude, longitude)
+        inside = core.point_in_polygon(point)
+        if inside:
+            return core.MatchResult(
+                True,
+                f"inside {label}",
+                "high",
+                latitude,
+                longitude,
+                0.0,
+            )
+        distance_km = min(
+            core.point_to_segment_km(
+                point,
+                core.SERVICE_AREA_POLYGON[index],
+                core.SERVICE_AREA_POLYGON[(index + 1) % len(core.SERVICE_AREA_POLYGON)],
+            )
+            for index in range(len(core.SERVICE_AREA_POLYGON))
+        )
+        return core.MatchResult(
+            False,
+            f"outside {label}",
+            "high",
+            latitude,
+            longitude,
+            distance_km,
+        )
+
+    core.coordinate_match = coordinate_match
+
+
+def configure_profile() -> str:
     raw_map = os.getenv(
         "CHP_ALERT_SERVICE_AREA_FILE",
         "service_area.geojson",
@@ -110,21 +160,24 @@ def configure_profile() -> None:
         detail.DETAIL_LOG_FILE = Path(detail_path).expanduser()
 
     profile = os.getenv("CHP_ALERT_PROFILE", "").strip() or "custom"
+    label = _service_area_reason_label(profile)
     providers = notification_runtime.configured_providers()
     policy = notification_runtime.configured_policy()
     LOG.info(
         "Loaded MARK profile %s: map=%s vertices=%d "
         "area_prefixes=%s type_fragments=%s location_source=CHP-detail-Lat/Lon "
-        "providers=%s severity=%s delivery=%s",
+        "service_area_label=%s providers=%s severity=%s delivery=%s",
         profile,
         map_path,
         len(area["polygon"]),
         ", ".join(area_prefixes),
         ", ".join(type_fragments),
+        label,
         ",".join(providers) or "none",
         policy.severity,
         policy.delivery_mode,
     )
+    return label
 
 
 def main(argv: Iterable[str] | None = None) -> int:
@@ -133,7 +186,8 @@ def main(argv: Iterable[str] | None = None) -> int:
     mark_detail_runtime.install()
     mark_postback_runtime.install()
     notification_runtime.install()
-    configure_profile()
+    label = configure_profile()
+    install_generic_coordinate_match(label)
     return detail.main(argv)
 
 
