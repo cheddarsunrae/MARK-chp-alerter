@@ -63,7 +63,7 @@ ZIP-only installations receive a clear manual-update message. A future signed re
 - Gotify
 - Generic JSON webhooks
 
-The GUI now exposes the provider and alert-policy fields directly under **Notification Providers and Alert Policy**. The visible settings include provider selection, severity, delivery mode, retry/expiration, ntfy server/topic/token, Gotify URL/token, webhook URL/token, and an optional map/profile label.
+The GUI exposes provider and alert-policy settings through **Notification Settings** near the top of the Configuration pane. The visible settings include provider selection, severity, delivery mode, retry/expiration, ntfy server/topic/token, Gotify URL/token, webhook URL/token, and an optional map/profile label.
 
 Common policy values:
 
@@ -90,6 +90,27 @@ CHP_ALERT_SERVICE_AREA_LABEL=Jamul Fire Station 36
 ```
 
 Leave it blank for generic wording.
+
+## Smoke-test map
+
+A broad San Diego/Border-region test map is included at:
+
+```text
+test_maps/san_diego_region_smoke_test.geojson
+```
+
+This polygon is intentionally oversized so a qualifying CHP incident anywhere in the San Diego/Border operating region should exercise the full alert pipeline quickly. It is a **test-only** boundary. Do not use it as an operational station response area.
+
+To use it, stop the monitor, choose the file under **Service Area File**, save configuration, then start the monitor. Switch back to the real map before operational use.
+
+## Map cleanup tools
+
+MARK has two cleanup modes:
+
+1. **Simplify Boundary** removes near-collinear points using a conservative metre tolerance.
+2. **Set Line Start** + **Remove Between Start + Selected** forces a direct line between two selected waypoints and removes the intermediate waypoints along the shorter boundary path.
+
+For direct cleanup: enable map editing, click the first waypoint, click **Set Line Start**, click the second waypoint, then click **Remove Between Start + Selected**. Review the preview before pressing **Save Map**.
 
 ## Fast filtering pipeline
 
@@ -166,10 +187,11 @@ chmod +x install-mark-linux.sh
 
 - `mark_update_entry.py` — GUI update, notification-provider, and alert-policy controls
 - `update_runtime.py` — safe Git update discovery and fast-forward installation
-- `mark_gui_entry.py` — safe GUI entry, profiles, filters, map simplification
+- `mark_gui_entry.py` — safe GUI entry, profiles, filters, simplification, and direct waypoint cleanup
 - `mark_backend.py` — runtime installation order and profile initialization
 - `mark_postback_runtime.py` — browser-faithful CHP detail selection
 - `mark_detail_runtime.py` — filtering, strict detail parsing, CAD-coordinate match
 - `notification_runtime.py` — Pushover, ntfy, Gotify, and webhook adapters
 - `service_area_runtime.py` — GeoJSON validation and polygon installation
+- `test_maps/san_diego_region_smoke_test.geojson` — broad test-only map
 - `HANDOFF.md` — canonical continuation guide
