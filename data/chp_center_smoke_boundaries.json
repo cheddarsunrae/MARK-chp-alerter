@@ -1,0 +1,30 @@
+{
+  "warning": "Testing only. These are deliberately broad approximate rectangles for confirming MARK polling and alert flow by CHP communications center. They are not official CHP boundaries and must not be used as operational response areas.",
+  "centers": {
+    "BFCC": {"name": "Bakersfield", "bbox": [-120.70, 34.70, -117.50, 36.60]},
+    "BSCC": {"name": "Barstow", "bbox": [-118.20, 34.30, -114.10, 36.60]},
+    "BICC": {"name": "Bishop", "bbox": [-121.00, 35.50, -117.30, 38.80]},
+    "BCCC": {"name": "Border", "bbox": [-117.70, 32.48, -116.00, 33.55]},
+    "CCCC": {"name": "Capitol", "bbox": [-122.90, 38.00, -120.50, 39.00]},
+    "CHCC": {"name": "Chico", "bbox": [-123.60, 38.80, -120.50, 41.00]},
+    "ECCC": {"name": "El Centro", "bbox": [-116.30, 32.50, -114.40, 33.60]},
+    "FRCC": {"name": "Fresno", "bbox": [-121.00, 35.40, -118.00, 37.60]},
+    "GGCC": {"name": "Golden Gate", "bbox": [-123.20, 36.70, -121.00, 38.70]},
+    "HMCC": {"name": "Humboldt", "bbox": [-124.50, 39.50, -122.50, 42.10]},
+    "ICCC": {"name": "Indio", "bbox": [-117.20, 33.10, -114.20, 34.80]},
+    "INCC": {"name": "Inland", "bbox": [-118.00, 33.40, -116.50, 34.60]},
+    "LACC": {"name": "Los Angeles", "bbox": [-119.00, 33.40, -117.60, 34.80]},
+    "MRCC": {"name": "Merced", "bbox": [-122.00, 36.60, -119.50, 38.40]},
+    "MYCC": {"name": "Monterey", "bbox": [-122.70, 35.70, -120.40, 37.40]},
+    "OCCC": {"name": "Orange", "bbox": [-118.20, 33.30, -116.90, 34.00]},
+    "RDCC": {"name": "Redding", "bbox": [-124.00, 40.00, -120.50, 42.10]},
+    "SACC": {"name": "Sacramento", "bbox": [-122.90, 37.80, -120.00, 39.40]},
+    "SLCC": {"name": "San Luis Obispo", "bbox": [-121.80, 34.60, -119.00, 36.50]},
+    "SKCCSTCC": {"name": "Stockton", "bbox": [-122.50, 37.30, -120.10, 38.60]},
+    "SUCC": {"name": "Susanville", "bbox": [-122.00, 39.60, -119.00, 42.10]},
+    "TKCC": {"name": "Truckee", "bbox": [-121.50, 38.40, -119.40, 39.80]},
+    "UKCC": {"name": "Ukiah", "bbox": [-124.10, 38.30, -122.00, 40.40]},
+    "VTCC": {"name": "Ventura", "bbox": [-120.20, 33.80, -118.50, 35.00]},
+    "YKCC": {"name": "Yreka", "bbox": [-124.50, 40.80, -121.00, 42.10]}
+  }
+}
