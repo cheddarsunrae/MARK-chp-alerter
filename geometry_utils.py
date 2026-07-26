@@ -57,3 +57,51 @@ def simplify_closed_polygon(points: Iterable[Point], tolerance_metres: float = 2
                 changed = True
                 break
     return result
+
+
+def remove_shorter_path_between(
+    points: Iterable[Point],
+    start_index: int,
+    end_index: int,
+) -> tuple[list[Point], int, int]:
+    """Replace the shorter boundary path between two vertices with one segment.
+
+    The polygon is represented without a duplicated closing vertex. The two
+    endpoint vertices are preserved. All intermediate vertices along the shorter
+    of the two possible boundary paths are removed. The returned selected index
+    points to the second endpoint in the new cyclic order.
+    """
+    result = [(float(lat), float(lon)) for lat, lon in points]
+    count = len(result)
+    if count < 3:
+        raise ValueError("A polygon needs at least three vertices")
+    if not 0 <= start_index < count or not 0 <= end_index < count:
+        raise IndexError("waypoint index out of range")
+    if start_index == end_index:
+        raise ValueError("Choose two different waypoints")
+
+    forward_between = (end_index - start_index - 1) % count
+    backward_between = (start_index - end_index - 1) % count
+    remove_forward = forward_between <= backward_between
+    removed = forward_between if remove_forward else backward_between
+    if removed <= 0:
+        raise ValueError("The selected waypoints are already adjacent")
+    if count - removed < 3:
+        raise ValueError("Removing those waypoints would leave fewer than three vertices")
+
+    if remove_forward:
+        new_points = [result[start_index], result[end_index]]
+        index = (end_index + 1) % count
+        while index != start_index:
+            new_points.append(result[index])
+            index = (index + 1) % count
+        selected_index = 1
+    else:
+        new_points = [result[end_index], result[start_index]]
+        index = (start_index + 1) % count
+        while index != end_index:
+            new_points.append(result[index])
+            index = (index + 1) % count
+        selected_index = 1
+
+    return new_points, removed, selected_index
