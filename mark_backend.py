@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 from typing import Any, Iterable
 
+import chp_center_runtime
 import chp_detail_alert as detail
 import chp_jamul_alert as core
 import mark_detail_runtime
@@ -148,7 +149,7 @@ def configure_profile() -> str:
     )
     if not area_prefixes:
         raise SystemExit(
-            "CHP_ALERT_AREA_PREFIXES must contain at least one prefix"
+            "CHP_ALERT_AREA_PREFIXES must contain at least one prefix, or * for all AREAs"
         )
 
     type_fragments = split_csv(
@@ -159,7 +160,7 @@ def configure_profile() -> str:
     )
     if not type_fragments:
         raise SystemExit(
-            "CHP_ALERT_TYPE_FRAGMENTS must contain at least one fragment"
+            "CHP_ALERT_TYPE_FRAGMENTS must contain at least one fragment, or * for all Types"
         )
 
     detail_path = os.getenv("CHP_ALERT_DETAIL_LOG_FILE")
@@ -171,10 +172,12 @@ def configure_profile() -> str:
     providers = notification_runtime.configured_providers()
     policy = notification_runtime.configured_policy()
     LOG.info(
-        "Loaded MARK profile %s: map=%s vertices=%d "
+        "Loaded MARK profile %s: center=%s (%s) map=%s vertices=%d "
         "area_prefixes=%s type_fragments=%s location_source=CHP-detail-Lat/Lon "
         "service_area_label=%s providers=%s severity=%s delivery=%s",
         profile,
+        chp_center_runtime.configured_center_name(),
+        chp_center_runtime.configured_center_code(),
         map_path,
         len(area["polygon"]),
         ", ".join(area_prefixes),
@@ -190,6 +193,7 @@ def configure_profile() -> str:
 def main(argv: Iterable[str] | None = None) -> int:
     core.DEFAULT_INTERVAL = MINIMUM_POLL_INTERVAL_SECONDS
     core.validate_args = validate_args
+    chp_center_runtime.install()
     mark_detail_runtime.install()
     mark_postback_runtime.install()
     notification_runtime.install()
