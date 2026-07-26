@@ -47,7 +47,13 @@ def validate_args(args: Any) -> None:
         raise SystemExit("--interval must be at least 30 seconds")
     if args.timeout <= 0:
         raise SystemExit("--timeout must be positive")
-    if bool(args.pushover_token) != bool(args.pushover_user):
+    try:
+        providers = notification_runtime.configured_providers()
+        notification_runtime.configured_policy()
+    except (TypeError, ValueError) as exc:
+        raise SystemExit(str(exc)) from exc
+    pushover_selected = "pushover" in providers or args.test_pushover
+    if pushover_selected and bool(args.pushover_token) != bool(args.pushover_user):
         raise SystemExit(
             "Pushover requires both PUSHOVER_APP_TOKEN and PUSHOVER_USER_KEY when Pushover is configured"
         )
@@ -62,10 +68,6 @@ def validate_args(args: Any) -> None:
             raise SystemExit(
                 "PUSHOVER_EXPIRE_SECONDS must be between 1 and 10800"
             )
-    try:
-        notification_runtime.configured_policy()
-    except (TypeError, ValueError) as exc:
-        raise SystemExit(str(exc)) from exc
 
 
 def _service_area_reason_label(profile: str) -> str:
