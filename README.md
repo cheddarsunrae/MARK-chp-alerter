@@ -8,6 +8,14 @@ MARK polls the public California Highway Patrol Border Communications Center CAD
 
 The Windows application is launching and polling successfully. The final live defect was resolved by reproducing the complete browser form submission for CHP detail selection. The monitor now receives the selected incident panel instead of the incident listing again.
 
+## User and expansion documentation
+
+- `USER_GUIDE.md` — nontechnical operating guide for firefighters, medics, dispatchers, and station personnel.
+- `docs/STATEWIDE_NOTIFICATION_EXPANSION.md` — approved next-phase requirements for ntfy, Gotify, webhooks, common alert policies, acknowledgement, escalation, and California-wide center selection.
+- `data/chp_communications_centers.json` — CHP communications-center codes captured from the live CAD dropdown on 2026-07-25.
+
+The statewide and multi-provider items are documented requirements and are not all implemented in the current release yet.
+
 ## Fast filtering pipeline
 
 MARK avoids fetching details for every CHP row.
@@ -179,6 +187,9 @@ Expected successful geographic decisions include `CHP detail Lat/Lon` in the rea
 
 ## Important files
 
+- `USER_GUIDE.md` — nontechnical operator guide
+- `docs/STATEWIDE_NOTIFICATION_EXPANSION.md` — approved next-phase specification
+- `data/chp_communications_centers.json` — statewide CAD center catalog
 - `mark_gui_entry.py` — safe Tk startup, profile filter manager, boundary simplification
 - `chp_gui.py` — branding, anchored zone extension, waypoint dragging
 - `mark_app.py` — shared dashboard and subprocess controller
