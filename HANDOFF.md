@@ -12,7 +12,7 @@
 - Backend entry point: `mark_backend.py`
 - Minimum poll interval: **30 seconds**
 
-Before changing code, verify local and GitHub `main` HEAD and read `README.md` and `MARK_GUI.md`.
+Before changing code, verify local and GitHub `main` HEAD and read `README.md`, `USER_GUIDE.md`, `MARK_GUI.md`, and `docs/STATEWIDE_NOTIFICATION_EXPANSION.md`.
 
 ## Product purpose
 
@@ -215,6 +215,63 @@ Default tolerance: 25 m.
 
 This improves readability and editing reliability. It is not a meaningful performance optimization for MARK's small polygons. Excessive tolerance can move the operational boundary, so review before Save Map.
 
+## Approved next phase: statewide and multi-channel expansion
+
+The user reported significant firefighter and medic interest and approved a larger productization phase.
+
+### Required notification providers
+
+1. Pushover
+2. ntfy
+3. Gotify
+4. Generic JSON webhook
+5. Later candidates: email, Teams, Slack, Discord, SMS
+
+### Required common alert policies
+
+- Severity: low, medium, high, critical
+- Notify once
+- Notify on important update
+- Repeat until acknowledged
+- Repeat until expiration
+- Retry interval
+- Expiration time
+- Duplicate cooldown
+- Quiet hours and critical override
+- Escalation after no acknowledgement
+- Per-call-type rules
+- Per-profile recipient routing
+
+Persistent-until-acknowledged must not be claimed for a provider unless MARK can actually track acknowledgement. Pushover supports receipts; other providers may require MARK's own acknowledgement service.
+
+### Statewide CHP requirements
+
+- Replace the hard-coded Border center with one or more profile-selected communications centers.
+- Parse the live CHP center dropdown dynamically.
+- Seed from `data/chp_communications_centers.json`.
+- Store incident identity with the center code to prevent number collisions.
+- Discover and retain AREA values observed per center.
+- Seed AREA mappings from official CHP Area Offices by Dispatch Center sources.
+- Keep per-center health and isolate one center's failure from the others.
+- Support center-specific maps and AREA allowlists.
+
+The captured live dropdown contained 25 center selections. See `docs/STATEWIDE_NOTIFICATION_EXPANSION.md` for the code list, proposed configuration, and implementation order.
+
+### Implementation order
+
+1. Extract Pushover behind a provider interface.
+2. Add ntfy.
+3. Add generic webhook.
+4. Add Gotify.
+5. Add common severity and one-time/update policies.
+6. Add durable alert receipts and acknowledgement state.
+7. Add persistent and escalation policies.
+8. Add dynamic statewide center selection.
+9. Add AREA discovery and catalog maintenance.
+10. Update GUI, tests, user guide, README, and this handoff.
+
+These expansion requirements are documented but not yet implemented in the accepted runtime.
+
 ## File map
 
 - `start-chp-alerter.ps1` — Windows venv, dependency, syntax preflight, GUI launch
@@ -230,6 +287,9 @@ This improves readability and editing reliability. It is not a meaningful perfor
 - `service_area_runtime.py` — GeoJSON validation and polygon installation
 - `geometry_utils.py` — near-collinear waypoint removal
 - `tests/test_mark_runtime.py` — parser, coordinate, filter, and simplification regression tests
+- `USER_GUIDE.md` — nontechnical operator guide
+- `docs/STATEWIDE_NOTIFICATION_EXPANSION.md` — approved expansion specification
+- `data/chp_communications_centers.json` — live CAD center catalog
 - `README.md` — operator/developer overview
 - `MARK_GUI.md` — GUI instructions
 - `HANDOFF.md` — this canonical continuation document
@@ -291,15 +351,18 @@ Confirmed on Windows by the user:
 - browser-faithful detail selection works;
 - application runs normally.
 
-## Remaining non-blocking work
+## Remaining work
 
-The requested Windows project is functionally complete. Remaining items are optional hardening or portability work, not known blockers:
+### Existing release hardening
 
 1. Native Fedora GUI acceptance.
 2. Add a committed sanitized full ASP.NET form fixture for postback-control tests.
 3. Add a unit test specifically for `successful_form_controls()` and form-action resolution.
-4. Consolidate runtime patch modules into the legacy modules only if desired; current layering is working and lower risk.
-5. Add CI for syntax and unit tests.
+4. Add CI for syntax and unit tests.
+
+### Approved expansion
+
+Implement the statewide and multi-provider phase described above and in `docs/STATEWIDE_NOTIFICATION_EXPANSION.md`.
 
 ## Known risks
 
@@ -309,6 +372,8 @@ The requested Windows project is functionally complete. Remaining items are opti
 - Pushover priority 2 repeats until acknowledged or expiration.
 - Running processes do not automatically reload maps/profiles.
 - Aggressive simplification can alter the service boundary.
+- Statewide polling must be rate-limited and fault-isolated.
+- Provider capabilities differ; common alert policy translation must be explicit.
 
 ## User preferences for future work
 
@@ -317,7 +382,8 @@ The requested Windows project is functionally complete. Remaining items are opti
 - Do not claim native testing that was not performed.
 - Windows PowerShell is primary; Fedora support must remain intact.
 - Keep launchers straightforward.
+- Documentation is part of completion, not optional cleanup.
 
 ## Continuation point
 
-The requested Windows implementation is complete and live-accepted. The latest functional layer is `mark_postback_runtime.py`, installed after `mark_detail_runtime.py`. Another thread should begin by verifying `main`, reading this handoff, and running the syntax/tests only if making further changes. There is no known active Windows blocker.
+The accepted Border/Pushover Windows implementation is complete and live-tested. The repository now also contains a nontechnical user guide, a 25-center CHP catalog, and the approved statewide/multi-provider expansion specification. The next coding thread should start with notification-provider abstraction, add ntfy, then move through acknowledgement policy and dynamic statewide center selection in the documented order.
