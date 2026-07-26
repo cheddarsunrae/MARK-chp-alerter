@@ -38,13 +38,15 @@ A release package should contain the application, platform installers, `.env.exa
 
 ```text
 platform launcher
-  -> mark_gui_entry.py
-      -> mark_backend.py
-          -> mark_detail_runtime.install()
-          -> mark_postback_runtime.install()
-          -> notification_runtime.install()
-          -> service-area loading
-          -> chp_detail_alert.main()
+  -> mark_update_entry.py
+      -> mark_gui_entry.py
+          -> mark_backend.py
+              -> mark_detail_runtime.install()
+              -> mark_postback_runtime.install()
+              -> notification_runtime.install()
+              -> service-area loading
+              -> generic coordinate-match label patch
+              -> chp_detail_alert.main()
 ```
 
 ## Installation
@@ -83,6 +85,7 @@ CHP_ALERT_DETAIL_LOG_FILE=runtime/details.jsonl
 CHP_ALERT_RETENTION_HOURS=72
 CHP_ALERT_LOG_LEVEL=INFO
 CHP_ALERT_SERVICE_AREA_FILE=service_area.geojson
+CHP_ALERT_SERVICE_AREA_LABEL=
 CHP_ALERT_PROFILE=
 CHP_ALERT_AREA_PREFIXES=BC,El
 CHP_ALERT_TYPE_FRAGMENTS=Unk,1140,1141,Min,Maj,1179,1180,1178,un w,Repo
@@ -90,7 +93,11 @@ CHP_ALERT_EXISTING=0
 CHP_ALERT_UPDATES=0
 ```
 
+`CHP_ALERT_SERVICE_AREA_LABEL` controls human-readable match text. Leave it blank for generic `active service-area polygon` wording or set a profile/station/agency label.
+
 ## Notification providers
+
+The GUI now exposes provider and alert-policy fields under **Notification Providers and Alert Policy**.
 
 ```dotenv
 NOTIFY_PROVIDERS=pushover
@@ -101,7 +108,13 @@ ALERT_EXPIRE_SECONDS=1800
 ALERT_COOLDOWN_SECONDS=300
 ```
 
-Provider identifiers are `pushover`, `ntfy`, `gotify`, and `webhook`. Multiple providers may be comma-separated.
+Provider identifiers are `pushover`, `ntfy`, `gotify`, and `webhook`. Multiple providers may be comma-separated, for example:
+
+```dotenv
+NOTIFY_PROVIDERS=pushover,ntfy
+```
+
+The GUI validates selected providers before saving and includes **Test Selected Providers**.
 
 ### Pushover
 
@@ -171,6 +184,8 @@ Use **Simplify Boundary** conservatively. Start with 10-25 metres, save to a new
 .\.venv\Scripts\python.exe -m py_compile `
   .\mark_backend.py `
   .\notification_runtime.py `
+  .\update_runtime.py `
+  .\mark_update_entry.py `
   .\mark_detail_runtime.py `
   .\mark_postback_runtime.py `
   .\mark_gui_entry.py
@@ -179,7 +194,8 @@ Use **Simplify Boundary** conservatively. Start with 10-25 metres, save to a new
 ```powershell
 .\.venv\Scripts\python.exe -m unittest `
   .\tests\test_mark_runtime.py `
-  .\tests\test_notification_runtime.py -v
+  .\tests\test_notification_runtime.py `
+  .\tests\test_update_runtime.py -v
 ```
 
 ## Troubleshooting
@@ -189,13 +205,13 @@ Use **Simplify Boundary** conservatively. Start with 10-25 metres, save to a new
 - State and deduplication: configured state JSON
 - Notification failures: `chp-alerter.notifications` log entries
 - Profile and map changes require monitor restart
+- Active match reasons should no longer say Station 36 unless the label explicitly contains Station 36
 
 ## Operational hardening before broad deployment
 
 - Publish versioned release packages.
 - Add CI and automated tests.
 - Add checksummed or signed downloads.
-- Add in-GUI provider configuration and test buttons.
 - Add statewide center selection and AREA discovery.
 - Add durable acknowledgement state where providers lack it.
 - Perform native acceptance testing on Windows, macOS, Fedora, and Ubuntu.
