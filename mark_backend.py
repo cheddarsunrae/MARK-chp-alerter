@@ -70,12 +70,17 @@ def validate_args(args: Any) -> None:
             )
 
 
-def _service_area_reason_label(profile: str) -> str:
-    raw = (
-        os.getenv("CHP_ALERT_SERVICE_AREA_LABEL", "").strip()
-        or profile.strip()
-        or "active service-area polygon"
-    )
+def _service_area_reason_label() -> str:
+    """Return a human-readable active map label for match reasons.
+
+    The default is intentionally generic. Profile names are not used as an
+    implicit fallback because a copied or legacy profile can otherwise make
+    unrelated maps look Station-36-specific in logs.
+    """
+
+    raw = os.getenv("CHP_ALERT_SERVICE_AREA_LABEL", "").strip()
+    if not raw:
+        return "active service-area polygon"
     folded = raw.casefold()
     if "polygon" in folded or "boundary" in folded:
         return raw
@@ -85,7 +90,7 @@ def _service_area_reason_label(profile: str) -> str:
 
 
 def install_generic_coordinate_match(label: str) -> None:
-    """Patch legacy coordinate matching so logs use the active profile/map label."""
+    """Patch legacy coordinate matching so logs use the active map label."""
 
     def coordinate_match(coordinates: tuple[float, float]) -> Any:
         latitude, longitude = coordinates
@@ -162,7 +167,7 @@ def configure_profile() -> str:
         detail.DETAIL_LOG_FILE = Path(detail_path).expanduser()
 
     profile = os.getenv("CHP_ALERT_PROFILE", "").strip() or "custom"
-    label = _service_area_reason_label(profile)
+    label = _service_area_reason_label()
     providers = notification_runtime.configured_providers()
     policy = notification_runtime.configured_policy()
     LOG.info(
