@@ -3,7 +3,7 @@ Set-Location $PSScriptRoot
 
 $python = Join-Path $PSScriptRoot '.venv\Scripts\pythonw.exe'
 $consolePython = Join-Path $PSScriptRoot '.venv\Scripts\python.exe'
-$gui = Join-Path $PSScriptRoot 'mark_gui_entry.py'
+$gui = Join-Path $PSScriptRoot 'mark_update_entry.py'
 $errorLog = Join-Path $PSScriptRoot 'runtime\mark-gui-error.log'
 
 if (-not (Test-Path $gui)) {
@@ -37,6 +37,8 @@ if (Test-Path $errorLog) {
 }
 
 $preflightFiles = @(
+    (Join-Path $PSScriptRoot 'mark_update_entry.py'),
+    (Join-Path $PSScriptRoot 'update_runtime.py'),
     (Join-Path $PSScriptRoot 'mark_gui_entry.py'),
     (Join-Path $PSScriptRoot 'chp_gui.py'),
     (Join-Path $PSScriptRoot 'mark_app.py'),
