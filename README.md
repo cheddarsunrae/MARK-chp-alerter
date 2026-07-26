@@ -37,6 +37,23 @@ Nontechnical operational users should receive a versioned ZIP or installer from 
 
 The Windows application launches and polls successfully. The final live defect was resolved by reproducing the complete browser form submission for CHP detail selection. The monitor now receives the selected incident panel instead of the incident listing again.
 
+## Update checking
+
+The update-aware GUI entry point is `mark_update_entry.py`. MARK checks the configured GitHub remote shortly after startup and also provides **Check for Updates** and **Install Update** controls.
+
+Automatic installation is intentionally conservative:
+
+- available only when MARK is installed as a Git checkout;
+- uses the computer's existing Git credentials, which matters while the repository is private;
+- runs `git fetch` for discovery and `git pull --ff-only` for installation;
+- refuses to install when local file changes or unpublished commits are present;
+- requires the monitor to be stopped;
+- refreshes Python dependencies after a successful pull;
+- restarts MARK after the update;
+- does not replace ignored operational files such as `.env`, profiles, private maps, logs, or runtime state.
+
+ZIP-only installations receive a clear manual-update message. A future signed release-package channel is still needed for fully automatic updates on non-Git installations.
+
 ## Notification runtime
 
 `notification_runtime.py` provides a common provider interface for:
@@ -117,6 +134,8 @@ chmod +x install-mark-linux.sh
 .\.venv\Scripts\python.exe -m py_compile `
   .\mark_backend.py `
   .\notification_runtime.py `
+  .\update_runtime.py `
+  .\mark_update_entry.py `
   .\mark_detail_runtime.py `
   .\mark_postback_runtime.py `
   .\mark_gui_entry.py
@@ -125,11 +144,14 @@ chmod +x install-mark-linux.sh
 ```powershell
 .\.venv\Scripts\python.exe -m unittest `
   .\tests\test_mark_runtime.py `
-  .\tests\test_notification_runtime.py -v
+  .\tests\test_notification_runtime.py `
+  .\tests\test_update_runtime.py -v
 ```
 
 ## Important files
 
+- `mark_update_entry.py` — GUI update notification and install controls
+- `update_runtime.py` — safe Git update discovery and fast-forward installation
 - `mark_gui_entry.py` — safe GUI entry, profiles, filters, map simplification
 - `mark_backend.py` — runtime installation order and profile initialization
 - `mark_postback_runtime.py` — browser-faithful CHP detail selection
