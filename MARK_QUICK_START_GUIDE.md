@@ -77,8 +77,27 @@ chmod +x install-mark-linux.sh
 3. Click **Start Monitor**.
 4. Leave the computer powered on and connected to the internet.
 5. Do not close MARK while it is monitoring.
-6. Use **Stop** before changing profiles, maps, or alert settings.
+6. Use **Stop** before changing profiles, maps, alert settings, or installing an update.
 7. Restart the monitor after saving changes.
+
+## Updating MARK
+
+MARK checks for updates shortly after it opens.
+
+When a newer version is available:
+
+1. MARK displays an **Update available** message.
+2. Stop the monitor.
+3. Open **Configuration** and find **MARK Updates**.
+4. Click **Install Update**.
+5. Confirm the update.
+6. MARK downloads the approved update and restarts itself.
+
+The updater does not replace your saved settings, profiles, service-area maps, logs, or incident history.
+
+Some copies of MARK are installed from a ZIP file rather than through Git. Those copies can report that automatic updating is unavailable. In that case, obtain the newest approved MARK package from your administrator and follow the same installation steps used originally.
+
+When the updater reports local file changes or unpublished changes, do not force the update. Send the message to your MARK administrator.
 
 ## Alert levels
 
@@ -112,6 +131,14 @@ Delivery options may include notify once, notify on update, repeat until acknowl
 - Click **Test Notification**.
 - Check the computer's internet connection.
 - Confirm the correct profile, map, and recipient settings are loaded.
+
+### Update check fails
+
+- Confirm the computer is online.
+- Try **Check for Updates** again.
+- Private GitHub installations require the computer's existing Git access to the MARK repository.
+- ZIP installations must be updated with a new approved package.
+- Do not delete `.env`, profiles, or maps while troubleshooting an update.
 
 ### The computer goes to sleep
 
