@@ -20,7 +20,7 @@ class UpdatingMarkApp(mark_gui_entry.SafeMarkApp):
     """Add non-blocking update checks without changing the monitor process."""
 
     def __init__(self) -> None:
-        self.update_status_text = tk.StringVar(value="Update status: not checked")
+        self.update_status_text: tk.StringVar | None = None
         self._update_check_running = False
         self._update_install_running = False
         super().__init__()
@@ -28,6 +28,7 @@ class UpdatingMarkApp(mark_gui_entry.SafeMarkApp):
 
     def _build_config(self, frame: ttk.Frame) -> None:
         super()._build_config(frame)
+        self.update_status_text = tk.StringVar(value="Update status: not checked")
         panel = ttk.LabelFrame(frame, text="MARK Updates", padding=8)
         panel.pack(fill="x", pady=(10, 0))
         ttk.Label(
@@ -51,6 +52,10 @@ class UpdatingMarkApp(mark_gui_entry.SafeMarkApp):
         )
         self.install_update_button.pack(side="left")
 
+    def _set_status(self, text: str) -> None:
+        if self.update_status_text is not None:
+            self.update_status_text.set(text)
+
     def _set_update_controls(self, checking: bool) -> None:
         state = "disabled" if checking else "normal"
         self.check_update_button.configure(state=state)
@@ -62,7 +67,7 @@ class UpdatingMarkApp(mark_gui_entry.SafeMarkApp):
             return
         self._update_check_running = True
         self._set_update_controls(True)
-        self.update_status_text.set("Checking GitHub for a newer MARK version...")
+        self._set_status("Checking GitHub for a newer MARK version...")
 
         def worker() -> None:
             status = update_runtime.check_for_update(ROOT)
@@ -77,10 +82,15 @@ class UpdatingMarkApp(mark_gui_entry.SafeMarkApp):
     ) -> None:
         self._update_check_running = False
         self.check_update_button.configure(state="normal")
-        self.update_status_text.set(status.message)
+        self._set_status(status.message)
         self.append_log(status.message)
 
-        can_install = status.supported and status.update_available and not status.dirty and not status.ahead_count
+        can_install = (
+            status.supported
+            and status.update_available
+            and not status.dirty
+            and not status.ahead_count
+        )
         self.install_update_button.configure(state="normal" if can_install else "disabled")
 
         if status.update_available:
@@ -117,7 +127,7 @@ class UpdatingMarkApp(mark_gui_entry.SafeMarkApp):
         self._update_install_running = True
         self.check_update_button.configure(state="disabled")
         self.install_update_button.configure(state="disabled")
-        self.update_status_text.set("Installing MARK update...")
+        self._set_status("Installing MARK update...")
         self.append_log("Installing MARK update with git pull --ff-only")
 
         def worker() -> None:
@@ -133,12 +143,12 @@ class UpdatingMarkApp(mark_gui_entry.SafeMarkApp):
     def _finish_update_install_error(self, message: str) -> None:
         self._update_install_running = False
         self.check_update_button.configure(state="normal")
-        self.update_status_text.set(f"Update failed: {message}")
+        self._set_status(f"Update failed: {message}")
         self.append_log(f"Update failed: {message}")
         messagebox.showerror("MARK update failed", message, parent=self)
 
     def _finish_update_install_success(self, message: str) -> None:
-        self.update_status_text.set(message)
+        self._set_status(message)
         self.append_log(message)
         messagebox.showinfo(
             "MARK updated",
