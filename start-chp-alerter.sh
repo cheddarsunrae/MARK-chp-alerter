@@ -21,4 +21,4 @@ if [[ ! -f .env ]]; then
   cp .env.example .env
 fi
 
-exec "$PYTHON" "$ROOT/mark_gui_entry.py"
+exec "$PYTHON" "$ROOT/mark_update_entry.py"
