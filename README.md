@@ -1,20 +1,64 @@
 # MARK — Map-Aware Roadway Knowledge
 
-MARK polls the public California Highway Patrol Border Communications Center CAD page, performs a fast first-pass listing filter, retrieves each selected call through CHP's ASP.NET GridView postback, confirms location from the CAD-supplied `Lat/Lon:` value, checks the active GeoJSON service-area polygon, and sends qualifying incidents through Pushover.
+MARK polls the public California Highway Patrol CAD page, performs a fast first-pass listing filter, retrieves selected incident details, confirms location from the CAD-supplied `Lat/Lon:` value, checks an active GeoJSON service-area polygon, and sends qualifying incidents through configured notification providers.
 
 > **Supplemental awareness only.** MARK is not an official CAD terminal, station alerting system, pager, radio, or replacement for agency dispatch. Public webpages, networks, and third-party push services can fail or change.
 
+## Platform support
+
+MARK uses one shared `main` branch for Windows, macOS, and Linux. Platform-specific branches are intentionally avoided because they would drift apart and make fixes harder to maintain.
+
+Nontechnical installers:
+
+- Windows: `Install MARK - Windows.bat`
+- macOS: `Install MARK - macOS.command`
+- Linux: `install-mark-linux.sh`
+
+Launchers:
+
+- Windows: `start-chp-alerter.ps1`
+- macOS/Linux: `start-chp-alerter.sh`
+- macOS installer also creates `Start MARK.command`
+- Linux installer creates a desktop-menu entry
+
+The Windows version is live-accepted. Native macOS and Linux acceptance testing is still required before those packages should be described as fully validated releases.
+
+## User manuals
+
+- `MARK_QUICK_START_GUIDE.md` — for users who do not know GitHub, PowerShell, Terminal, or Python.
+- `MARK_TECHNICAL_USER_GUIDE.md` — installation, configuration, providers, validation, and troubleshooting.
+- `USER_GUIDE.md` — earlier general operating guide retained for compatibility.
+- `docs/STATEWIDE_NOTIFICATION_EXPANSION.md` — statewide and multi-provider architecture.
+- `data/chp_communications_centers.json` — CHP communications-center catalog.
+
+Nontechnical operational users should receive a versioned ZIP or installer from an approved department or MARK release location. They should not be expected to clone a GitHub repository.
+
 ## Current accepted status
 
-The Windows application is launching and polling successfully. The final live defect was resolved by reproducing the complete browser form submission for CHP detail selection. The monitor now receives the selected incident panel instead of the incident listing again.
+The Windows application launches and polls successfully. The final live defect was resolved by reproducing the complete browser form submission for CHP detail selection. The monitor now receives the selected incident panel instead of the incident listing again.
 
-## User and expansion documentation
+## Notification runtime
 
-- `USER_GUIDE.md` — nontechnical operating guide for firefighters, medics, dispatchers, and station personnel.
-- `docs/STATEWIDE_NOTIFICATION_EXPANSION.md` — approved next-phase requirements for ntfy, Gotify, webhooks, common alert policies, acknowledgement, escalation, and California-wide center selection.
-- `data/chp_communications_centers.json` — CHP communications-center codes captured from the live CAD dropdown on 2026-07-25.
+`notification_runtime.py` provides a common provider interface for:
 
-The statewide and multi-provider items are documented requirements and are not all implemented in the current release yet.
+- Pushover
+- ntfy
+- Gotify
+- Generic JSON webhooks
+
+Common policy values:
+
+```dotenv
+NOTIFY_PROVIDERS=pushover
+ALERT_SEVERITY=critical
+ALERT_DELIVERY_MODE=until_acknowledged
+ALERT_RETRY_SECONDS=30
+ALERT_EXPIRE_SECONDS=1800
+```
+
+Severity values are `low`, `medium`, `high`, and `critical`. Delivery values are `notify_once`, `notify_on_update`, `until_acknowledged`, and `until_expiration`.
+
+Provider capability matters. MARK does not claim acknowledgement for providers that cannot report it.
 
 ## Fast filtering pipeline
 
@@ -24,19 +68,13 @@ MARK avoids fetching details for every CHP row.
 
 Only the first two characters of the CHP `AREA` value are compared, case-insensitively.
 
-Known values are `San Diego`, `Temecula`, `Oceanside`, `El Cajon`, and `BC`.
-
 Station 36 defaults:
 
 ```dotenv
 CHP_ALERT_AREA_PREFIXES=BC,El
 ```
 
-This retains `BC` and `El Cajon` rows while rejecting San Diego, Temecula, and Oceanside before detail requests.
-
 ### Type-fragment search
-
-MARK searches the CHP `Type` column for case-insensitive substrings instead of exact full names.
 
 ```dotenv
 CHP_ALERT_TYPE_FRAGMENTS=Unk,1140,1141,Min,Maj,1179,1180,1178,un w,Repo
@@ -44,160 +82,58 @@ CHP_ALERT_TYPE_FRAGMENTS=Unk,1140,1141,Min,Maj,1179,1180,1178,un w,Repo
 
 ### Browser-faithful detail retrieval
 
-For each retained listing row, `mark_postback_runtime.py`:
-
-1. reads the form's actual `action` URL;
-2. collects all successful `input`, `select`, and `textarea` controls;
-3. preserves the selected communications center and dropdown values;
-4. submits the GridView `__EVENTTARGET` and `Select$n` argument;
-5. receives the selected incident detail response.
-
-Submitting only ASP.NET hidden fields returns the listing again and is not sufficient.
+For each retained listing row, `mark_postback_runtime.py` reads the form action, collects successful form controls, preserves dropdown values, submits the GridView event, and returns the selected incident response.
 
 ### CAD coordinate confirmation
 
-The selected call's detail header contains `Lat/Lon:`. MARK treats that CAD-supplied coordinate as authoritative and checks it directly against the service-area polygon. Address geocoding is not part of MARK's active decision path.
+MARK treats the selected call's `Lat/Lon:` header as authoritative and checks it directly against the service-area polygon. Address geocoding is not part of the active decision path.
 
-## Detail parsing and alerts
+## Technical quick start
 
-CHP detail responses may contain the selected incident panel together with the complete all-incidents table. `mark_detail_runtime.py` rejects ordinary listing rows and retains the selected call's canonical coordinate line and genuine CAD/operator notes.
-
-Detail codes `11-78`, `11-79`, `11-80`, and `11-81` remain alert-promoting codes. `11-82` is logged but does not currently create its own alert category.
-
-## Windows quick start
+### Windows
 
 ```powershell
-cd C:\Users\Shane\Documents\GitHub\chp-alerter
-git pull
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 .\start-chp-alerter.ps1
 ```
 
-The launcher creates `.venv`, installs dependencies, creates `.env` from `.env.example` when needed, performs syntax checks, and starts MARK.
-
-Hidden GUI startup failures are written to `runtime\mark-gui-error.log`.
-
-## Fedora quick start
+### macOS
 
 ```bash
-sudo dnf install -y python3 python3-tkinter
-cd /path/to/chp-alerter
-git pull
-chmod +x start-chp-alerter.sh
-./start-chp-alerter.sh
+chmod +x "Install MARK - macOS.command"
+./"Install MARK - macOS.command"
 ```
 
-## Profiles
+### Linux
 
-Named profiles save:
-
-- a service-area map copy;
-- AREA prefixes to monitor;
-- Type fragments to monitor;
-- poll interval;
-- alert-existing behavior;
-- alert-update behavior.
-
-Profile storage:
-
-```text
-profiles/profiles.json
-profiles/maps/
+```bash
+chmod +x install-mark-linux.sh
+./install-mark-linux.sh
 ```
-
-Restart a running backend after loading or changing a profile.
-
-## Map editor
-
-Use **Configuration → Service Area File → …** to load a `.geojson` or `.json` Polygon. GeoJSON uses `[longitude, latitude]`; MARK internally uses `(latitude, longitude)`.
-
-### Extend a zone
-
-1. Enable editing.
-2. Select an existing waypoint.
-3. Click **Start Extension**.
-4. Add at least two clicks.
-5. Click **Finish Extension**.
-6. MARK replaces the final temporary click with the nearest existing waypoint and replaces the shorter old boundary path.
-
-### Simplify a boundary
-
-**Simplify Boundary** removes near-collinear intermediate waypoints using a user-selected tolerance. The default is 25 metres. This improves readability and editing; it is not a meaningful runtime performance optimization. Review the changed boundary before saving.
-
-## Configuration reference
-
-```dotenv
-CHP_ALERT_INTERVAL=30
-CHP_ALERT_TIMEOUT=20
-CHP_ALERT_STATE_FILE=runtime/state.json
-CHP_ALERT_DETAIL_LOG_FILE=runtime/details.jsonl
-CHP_ALERT_RETENTION_HOURS=72
-CHP_ALERT_LOG_LEVEL=INFO
-CHP_ALERT_SERVICE_AREA_FILE=service_area.geojson
-CHP_ALERT_PROFILE=
-CHP_ALERT_AREA_PREFIXES=BC,El
-CHP_ALERT_TYPE_FRAGMENTS=Unk,1140,1141,Min,Maj,1179,1180,1178,un w,Repo
-CHP_ALERT_EXISTING=0
-CHP_ALERT_UPDATES=0
-PUSHOVER_APP_TOKEN=
-PUSHOVER_USER_KEY=
-PUSHOVER_PRIORITY=2
-PUSHOVER_RETRY_SECONDS=30
-PUSHOVER_EXPIRE_SECONDS=1800
-PUSHOVER_SOUND=alien
-```
-
-Legacy geocoder and exact-name filter keys may remain in older `.env` files for compatibility, but they are not authoritative for the current MARK runtime.
-
-Never commit `.env`, credentials, runtime state, captured CAD pages, or private operational profile files.
 
 ## Validation
 
-Syntax check:
-
 ```powershell
 .\.venv\Scripts\python.exe -m py_compile `
-  .\chp_jamul_alert.py `
-  .\chp_detail_alert.py `
+  .\mark_backend.py `
+  .\notification_runtime.py `
   .\mark_detail_runtime.py `
   .\mark_postback_runtime.py `
-  .\mark_backend.py `
-  .\chp_gui.py `
-  .\mark_gui_entry.py `
-  .\geometry_utils.py
+  .\mark_gui_entry.py
 ```
-
-Unit tests:
 
 ```powershell
-.\.venv\Scripts\python.exe -m unittest .\tests\test_mark_runtime.py -v
+.\.venv\Scripts\python.exe -m unittest `
+  .\tests\test_mark_runtime.py `
+  .\tests\test_notification_runtime.py -v
 ```
-
-Safe dry poll:
-
-```powershell
-.\.venv\Scripts\python.exe .\mark_backend.py `
-  --once `
-  --dry-run `
-  --alert-existing `
-  --log-level DEBUG
-```
-
-Expected successful geographic decisions include `CHP detail Lat/Lon` in the reason.
 
 ## Important files
 
-- `USER_GUIDE.md` — nontechnical operator guide
-- `docs/STATEWIDE_NOTIFICATION_EXPANSION.md` — approved next-phase specification
-- `data/chp_communications_centers.json` — statewide CAD center catalog
-- `mark_gui_entry.py` — safe Tk startup, profile filter manager, boundary simplification
-- `chp_gui.py` — branding, anchored zone extension, waypoint dragging
-- `mark_app.py` — shared dashboard and subprocess controller
-- `mark_backend.py` — runtime entry point and patch installation order
-- `mark_postback_runtime.py` — complete browser-faithful CHP detail form submission
-- `mark_detail_runtime.py` — AREA/type prefilter, strict detail parser, CAD-coordinate match
-- `chp_detail_alert.py` — detail model, codes, JSONL logging, alert formatting
-- `chp_jamul_alert.py` — CHP fetch, state, polygon match, and Pushover
+- `mark_gui_entry.py` — safe GUI entry, profiles, filters, map simplification
+- `mark_backend.py` — runtime installation order and profile initialization
+- `mark_postback_runtime.py` — browser-faithful CHP detail selection
+- `mark_detail_runtime.py` — filtering, strict detail parsing, CAD-coordinate match
+- `notification_runtime.py` — Pushover, ntfy, Gotify, and webhook adapters
 - `service_area_runtime.py` — GeoJSON validation and polygon installation
-- `geometry_utils.py` — near-collinear waypoint removal
 - `HANDOFF.md` — canonical continuation guide
