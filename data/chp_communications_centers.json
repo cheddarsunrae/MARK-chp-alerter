@@ -1,0 +1,31 @@
+{
+  "captured_at": "2026-07-25",
+  "source": "CHP CAD Communications Centers dropdown",
+  "centers": [
+    {"code": "BFCC", "name": "Bakersfield"},
+    {"code": "BSCC", "name": "Barstow"},
+    {"code": "BICC", "name": "Bishop"},
+    {"code": "BCCC", "name": "Border"},
+    {"code": "CCCC", "name": "Capitol"},
+    {"code": "CHCC", "name": "Chico"},
+    {"code": "ECCC", "name": "El Centro"},
+    {"code": "FRCC", "name": "Fresno"},
+    {"code": "GGCC", "name": "Golden Gate"},
+    {"code": "HMCC", "name": "Humboldt"},
+    {"code": "ICCC", "name": "Indio"},
+    {"code": "INCC", "name": "Inland"},
+    {"code": "LACC", "name": "Los Angeles"},
+    {"code": "MRCC", "name": "Merced"},
+    {"code": "MYCC", "name": "Monterey"},
+    {"code": "OCCC", "name": "Orange"},
+    {"code": "RDCC", "name": "Redding"},
+    {"code": "SACC", "name": "Sacramento"},
+    {"code": "SLCC", "name": "San Luis Obispo"},
+    {"code": "SKCCSTCC", "name": "Stockton"},
+    {"code": "SUCC", "name": "Susanville"},
+    {"code": "TKCC", "name": "Truckee"},
+    {"code": "UKCC", "name": "Ukiah"},
+    {"code": "VTCC", "name": "Ventura"},
+    {"code": "YKCC", "name": "Yreka"}
+  ]
+}
