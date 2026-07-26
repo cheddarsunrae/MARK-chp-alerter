@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import chp_jamul_alert as core
-from geometry_utils import simplify_closed_polygon
+from geometry_utils import remove_shorter_path_between, simplify_closed_polygon
 from mark_detail_runtime import (
     area_matches,
     extract_detail_coordinates,
@@ -145,6 +145,34 @@ class GeometryTests(unittest.TestCase):
             (32.01, -116.99),
         ]
         self.assertEqual(simplify_closed_polygon(triangle, 1000), triangle)
+
+    def test_remove_shorter_path_between_two_waypoints(self) -> None:
+        points = [
+            (0.0, 0.0),
+            (0.0, 1.0),
+            (0.0, 2.0),
+            (1.0, 2.0),
+            (1.0, 1.0),
+            (1.0, 0.0),
+        ]
+        revised, removed, selected = remove_shorter_path_between(points, 0, 3)
+        self.assertEqual(removed, 2)
+        self.assertEqual(selected, 1)
+        self.assertEqual(revised[0], points[0])
+        self.assertEqual(revised[1], points[3])
+        self.assertNotIn(points[1], revised)
+        self.assertNotIn(points[2], revised)
+        self.assertGreaterEqual(len(revised), 3)
+
+    def test_remove_shorter_path_refuses_adjacent_waypoints(self) -> None:
+        points = [
+            (0.0, 0.0),
+            (0.0, 1.0),
+            (1.0, 1.0),
+            (1.0, 0.0),
+        ]
+        with self.assertRaises(ValueError):
+            remove_shorter_path_between(points, 0, 1)
 
 
 if __name__ == "__main__":
