@@ -13,6 +13,7 @@ import chp_center_runtime
 import chp_detail_alert as detail
 import chp_jamul_alert as core
 import mark_detail_runtime
+import mark_filter_runtime
 import mark_postback_runtime
 import notification_runtime
 from service_area_runtime import ServiceAreaError, apply_to_core
@@ -195,6 +196,7 @@ def main(argv: Iterable[str] | None = None) -> int:
     core.validate_args = validate_args
     chp_center_runtime.install()
     mark_detail_runtime.install()
+    mark_filter_runtime.install()
     mark_postback_runtime.install()
     notification_runtime.install()
     label = configure_profile()
