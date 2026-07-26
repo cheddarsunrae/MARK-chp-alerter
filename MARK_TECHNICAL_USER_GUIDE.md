@@ -97,7 +97,7 @@ CHP_ALERT_UPDATES=0
 
 ## Notification providers
 
-The GUI now exposes provider and alert-policy fields under **Notification Providers and Alert Policy**.
+The GUI exposes provider and alert-policy fields through **Notification Settings** near the top of the Configuration pane.
 
 ```dotenv
 NOTIFY_PROVIDERS=pushover
@@ -176,7 +176,33 @@ The statewide catalog is stored in `data/chp_communications_centers.json`. The d
 
 MARK accepts GeoJSON Polygon files. GeoJSON order is `[longitude, latitude]`; MARK internally uses `(latitude, longitude)`.
 
-Use **Simplify Boundary** conservatively. Start with 10-25 metres, save to a new file, and visually inspect before replacing an operational map.
+### Broad smoke-test map
+
+The repository includes a test-only broad San Diego/Border-region map:
+
+```text
+test_maps/san_diego_region_smoke_test.geojson
+```
+
+Use this to confirm that the polling, detail selection, CAD coordinate parsing, polygon check, and notification path are working without waiting for a call inside a small station polygon. It is intentionally oversized and must not be used as a real response boundary.
+
+### Conservative simplification
+
+Use **Simplify Boundary** to remove near-collinear waypoints. Start with 10-25 metres, save to a new file, and visually inspect before replacing an operational map.
+
+### Forced direct-line cleanup
+
+Use **Set Line Start** and **Remove Between Start + Selected** when you want to force a straight segment between two waypoints:
+
+1. Enable map editing.
+2. Click the first waypoint.
+3. Click **Set Line Start**.
+4. Click the second waypoint.
+5. Click **Remove Between Start + Selected**.
+6. Review the new direct segment.
+7. Save the map only after confirming the boundary is still correct.
+
+MARK removes the intermediate waypoints along the shorter boundary path and keeps the two endpoints.
 
 ## Validation
 
