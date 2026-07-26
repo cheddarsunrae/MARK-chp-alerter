@@ -13,6 +13,7 @@ import chp_detail_alert as detail
 import chp_jamul_alert as core
 import mark_detail_runtime
 import mark_postback_runtime
+import notification_runtime
 from service_area_runtime import ServiceAreaError, apply_to_core
 
 MINIMUM_POLL_INTERVAL_SECONDS = 30.0
@@ -61,6 +62,10 @@ def validate_args(args: Any) -> None:
             raise SystemExit(
                 "PUSHOVER_EXPIRE_SECONDS must be between 1 and 10800"
             )
+    try:
+        notification_runtime.configured_policy()
+    except (TypeError, ValueError) as exc:
+        raise SystemExit(str(exc)) from exc
 
 
 def configure_profile() -> None:
@@ -105,14 +110,20 @@ def configure_profile() -> None:
         detail.DETAIL_LOG_FILE = Path(detail_path).expanduser()
 
     profile = os.getenv("CHP_ALERT_PROFILE", "").strip() or "custom"
+    providers = notification_runtime.configured_providers()
+    policy = notification_runtime.configured_policy()
     LOG.info(
         "Loaded MARK profile %s: map=%s vertices=%d "
-        "area_prefixes=%s type_fragments=%s location_source=CHP-detail-Lat/Lon",
+        "area_prefixes=%s type_fragments=%s location_source=CHP-detail-Lat/Lon "
+        "providers=%s severity=%s delivery=%s",
         profile,
         map_path,
         len(area["polygon"]),
         ", ".join(area_prefixes),
         ", ".join(type_fragments),
+        ",".join(providers) or "none",
+        policy.severity,
+        policy.delivery_mode,
     )
 
 
@@ -121,6 +132,7 @@ def main(argv: Iterable[str] | None = None) -> int:
     core.validate_args = validate_args
     mark_detail_runtime.install()
     mark_postback_runtime.install()
+    notification_runtime.install()
     configure_profile()
     return detail.main(argv)
 
