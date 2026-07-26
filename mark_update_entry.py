@@ -17,7 +17,6 @@ import mark_app
 import mark_gui_entry
 import update_runtime
 
-
 ROOT = Path(__file__).resolve().parent
 PUSHOVER_URL = "https://api.pushover.net/1/messages.json"
 SEVERITIES = ("low", "medium", "high", "critical")
@@ -74,7 +73,10 @@ class UpdatingMarkApp(mark_gui_entry.SafeMarkApp):
                 except tk.TclError:
                     continue
                 if "Test Pushover" in text:
-                    widget.configure(text="➤  Test Notifications", command=self.test_selected_notifications)
+                    widget.configure(
+                        text="➤  Test Notifications",
+                        command=self.test_selected_notifications,
+                    )
 
     def _walk_children(self, parent: tk.Widget) -> list[tk.Widget]:
         children: list[tk.Widget] = []
@@ -86,17 +88,23 @@ class UpdatingMarkApp(mark_gui_entry.SafeMarkApp):
     def _build_config(self, frame: ttk.Frame) -> None:
         super()._build_config(frame)
         self._ensure_notification_vars()
-        self._insert_notification_summary(frame)
-        self._build_update_panel(frame)
+        self._insert_visible_top_panels(frame)
 
-    def _insert_notification_summary(self, frame: ttk.Frame) -> None:
-        self.notification_status_text = tk.StringVar(value=self._notification_summary())
-        panel = ttk.LabelFrame(frame, text="Notifications", padding=8)
+    def _insert_visible_top_panels(self, frame: ttk.Frame) -> None:
+        """Keep notifications and update buttons above the scroll-prone config fields."""
         existing = frame.pack_slaves()
+        top = ttk.Frame(frame, style="Panel.TFrame", padding=0)
         if existing:
-            panel.pack(fill="x", pady=(0, 10), before=existing[0])
+            top.pack(fill="x", pady=(0, 10), before=existing[0])
         else:
-            panel.pack(fill="x", pady=(0, 10))
+            top.pack(fill="x", pady=(0, 10))
+        self._build_notification_summary(top)
+        self._build_update_panel(top)
+
+    def _build_notification_summary(self, parent: ttk.Frame) -> None:
+        self.notification_status_text = tk.StringVar(value=self._notification_summary())
+        panel = ttk.LabelFrame(parent, text="Notifications", padding=8)
+        panel.pack(fill="x", pady=(0, 8))
         ttk.Label(
             panel,
             textvariable=self.notification_status_text,
@@ -114,6 +122,31 @@ class UpdatingMarkApp(mark_gui_entry.SafeMarkApp):
             text="Test Selected Providers",
             command=self.test_selected_notifications,
         ).pack(side="left")
+
+    def _build_update_panel(self, parent: ttk.Frame) -> None:
+        self.update_status_text = tk.StringVar(value="Update status: not checked")
+        panel = ttk.LabelFrame(parent, text="MARK Updates", padding=8)
+        panel.pack(fill="x", pady=(0, 0))
+        ttk.Label(
+            panel,
+            textvariable=self.update_status_text,
+            wraplength=350,
+        ).pack(anchor="w", fill="x")
+        buttons = ttk.Frame(panel)
+        buttons.pack(fill="x", pady=(7, 0))
+        self.check_update_button = ttk.Button(
+            buttons,
+            text="Check for Updates",
+            command=lambda: self.check_for_updates(notify_when_current=True),
+        )
+        self.check_update_button.pack(side="left", padx=(0, 5))
+        self.install_update_button = ttk.Button(
+            buttons,
+            text="Install Update",
+            command=self.install_available_update,
+            state="disabled",
+        )
+        self.install_update_button.pack(side="left")
 
     def _notification_summary(self) -> str:
         try:
@@ -160,7 +193,16 @@ class UpdatingMarkApp(mark_gui_entry.SafeMarkApp):
         notebook.add(gotify, text="Gotify")
         notebook.add(webhook, text="Webhook")
 
-        def add_field(parent: ttk.Frame, row: int, key: str, label: str, *, secret: bool = False, values: tuple[str, ...] | None = None, width: int = 48) -> None:
+        def add_field(
+            parent: ttk.Frame,
+            row: int,
+            key: str,
+            label: str,
+            *,
+            secret: bool = False,
+            values: tuple[str, ...] | None = None,
+            width: int = 48,
+        ) -> None:
             ttk.Label(parent, text=label).grid(row=row, column=0, sticky="w", pady=5)
             if values:
                 widget = ttk.Combobox(parent, textvariable=self.vars[key], values=values, state="readonly", width=width)
@@ -241,31 +283,6 @@ class UpdatingMarkApp(mark_gui_entry.SafeMarkApp):
             self._refresh_notification_summary()
             messagebox.showinfo("Saved", "Notification settings saved.", parent=dialog)
             dialog.destroy()
-
-    def _build_update_panel(self, frame: ttk.Frame) -> None:
-        self.update_status_text = tk.StringVar(value="Update status: not checked")
-        panel = ttk.LabelFrame(frame, text="MARK Updates", padding=8)
-        panel.pack(fill="x", pady=(10, 0))
-        ttk.Label(
-            panel,
-            textvariable=self.update_status_text,
-            wraplength=340,
-        ).pack(anchor="w", fill="x")
-        buttons = ttk.Frame(panel)
-        buttons.pack(fill="x", pady=(7, 0))
-        self.check_update_button = ttk.Button(
-            buttons,
-            text="Check for Updates",
-            command=lambda: self.check_for_updates(notify_when_current=True),
-        )
-        self.check_update_button.pack(side="left", padx=(0, 5))
-        self.install_update_button = ttk.Button(
-            buttons,
-            text="Install Update",
-            command=self.install_available_update,
-            state="disabled",
-        )
-        self.install_update_button.pack(side="left")
 
     def _providers(self, values: dict[str, str] | None = None) -> list[str]:
         source = values or {key: var.get() for key, var in self.vars.items()}
