@@ -128,6 +128,8 @@ CHP_ALERT_COMM_CENTER_NAME=Border
 CHP_ALERT_SERVICE_AREA_FILE=service_area.geojson
 CHP_ALERT_SERVICE_AREA_LABEL=
 CHP_ALERT_BOUNDARY_BUFFER_METERS=0
+CHP_ALERT_ADDRESS_BOX_ADDRESS=
+CHP_ALERT_ADDRESS_BOX_HALF_SIZE_METERS=3000
 CHP_ALERT_PROFILE=
 CHP_ALERT_AREA_PREFIXES=BC,El
 CHP_ALERT_TYPE_FRAGMENTS=Unk,1140,1141,Min,Maj,1179,1180,1178,un w,Repo
@@ -138,6 +140,8 @@ CHP_ALERT_UPDATES=0
 `CHP_ALERT_SERVICE_AREA_LABEL` controls human-readable match text. Leave it blank for generic `active service-area polygon` wording or set a profile/station/agency label.
 
 `CHP_ALERT_BOUNDARY_BUFFER_METERS` controls near-boundary alerts. `0` means strict inside-polygon only. A positive value alerts for qualifying incidents that are outside the polygon but within that many metres of the active boundary. For example, `12000` is about 7.5 miles.
+
+`CHP_ALERT_ADDRESS_BOX_ADDRESS` and `CHP_ALERT_ADDRESS_BOX_HALF_SIZE_METERS` store the last address-box helper inputs. The generated GeoJSON is stored under `runtime/address_maps/`; runtime output is intentionally excluded from release ZIPs and Git.
 
 `CHP_ALERT_AREA_PREFIXES=*` and `CHP_ALERT_TYPE_FRAGMENTS=*` are smoke-test settings. Do not leave them enabled for normal operational use unless that is intentional.
 
@@ -234,6 +238,21 @@ Provider capability matters. Persistent acknowledgement is guaranteed only when 
 
 MARK accepts GeoJSON Polygon files. GeoJSON order is `[longitude, latitude]`; MARK internally uses `(latitude, longitude)`.
 
+### Address box maps
+
+The GUI includes an **Address Box Map** helper under **CHP Region / Service-Area Map**.
+
+Workflow:
+
+1. Enter an address.
+2. Enter a box half-size in metres.
+3. Click **Build Address Box Map**.
+4. MARK geocodes the address once, writes a square GeoJSON under `runtime/address_maps/`, loads it as the active service-area map, and saves the configuration.
+
+The half-size is the distance from the geocoded center point to each side of the square. For example, `3000` creates an approximate 6 km by 6 km box. The map is a square approximation, not a circular radius, and must be visually reviewed before operational use.
+
+Generated address maps reset `CHP_ALERT_BOUNDARY_BUFFER_METERS` to `0` so the selected box is the alerting footprint unless the user intentionally adds a buffer later.
+
 ### Boundary buffer / near-boundary alerting
 
 The normal decision remains map-first:
@@ -281,6 +300,7 @@ MARK removes the intermediate waypoints along the shorter boundary path and keep
 .\.venv\Scripts\python.exe -m py_compile `
   .\mark_region_entry.py `
   .\mark_backend.py `
+  .\address_box_runtime.py `
   .\notification_runtime.py `
   .\update_runtime.py `
   .\mark_update_entry.py `
@@ -305,6 +325,7 @@ MARK removes the intermediate waypoints along the shorter boundary path and keep
 - Profile and map changes require monitor restart
 - Active match reasons should no longer say Station 36 unless the label explicitly contains Station 36
 - If a relevant call is just outside the polygon, set a conservative boundary buffer and re-test with a dry poll
+- If an address box map geocodes the wrong place, enter a more specific address and visually inspect before saving it for operational use
 
 ## Operational hardening before broad deployment
 
