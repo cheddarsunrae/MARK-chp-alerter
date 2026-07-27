@@ -7,13 +7,14 @@
 - Previous repository name/path used in older docs: `cheddarsunrae/chp-alerter`
 - Default branch: `main`
 - Primary Windows checkout: `C:\Users\Shane\Documents\GitHub\chp-alerter`
+- Current version file: `VERSION`
 - Windows launcher: `start-chp-alerter.ps1`
 - macOS/Linux launcher: `start-chp-alerter.sh`
-- GUI entry point: `mark_update_entry.py`
+- Current GUI entry point: `mark_region_entry.py`
 - Backend entry point: `mark_backend.py`
 - Minimum poll interval: **30 seconds**
 
-Before changing code, verify local and GitHub `main` HEAD and read `README.md`, `MARK_QUICK_START_GUIDE.md`, `MARK_TECHNICAL_USER_GUIDE.md`, `MARK_GUI.md`, and `docs/STATEWIDE_NOTIFICATION_EXPANSION.md`.
+Before changing code, verify local and GitHub `main` HEAD and read `README.md`, `RELEASE_README.md`, `MARK_QUICK_START_GUIDE.md`, `MARK_TECHNICAL_USER_GUIDE.md`, `docs/RELEASE_PACKAGING.md`, and `docs/BETA_RELEASE_CHECKLIST.md`.
 
 ## Product purpose
 
@@ -23,11 +24,16 @@ MARK is supplemental awareness, not an official dispatch or CAD system.
 
 ## Current accepted state
 
-As of 2026-07-25, the user confirmed that MARK **runs fine** after the final detail-postback correction. Later work added update checks, multi-provider notification configuration, and generic service-area wording. Those later GUI/runtime changes still require local acceptance after pull.
+The Windows application previously launched and polled successfully after the final detail-postback correction. Later work added update checks, multi-provider notification configuration, generic service-area wording, CHP center selection, center smoke-test maps, release packaging, and a first-run helper. Those later GUI/runtime/release changes still require local acceptance after pull.
 
 The Windows application provides:
 
-- MARK branding and status cards;
+- MARK branding and versioned window title;
+- first-run beta helper;
+- visible **CHP Region / Service-Area Map** panel;
+- CHP communications-center selector;
+- visible service-area map field and Browse button;
+- generated smoke-test map loading for all cataloged CHP centers;
 - monitor start/stop, dry poll, config/map reload;
 - update check and safe `git pull --ff-only` install controls;
 - visible notification-provider and alert-policy controls;
@@ -38,7 +44,9 @@ The Windows application provides:
 - anchored zone-extension workflow;
 - named profiles;
 - configurable AREA prefixes and Type fragments;
+- wildcard `*` smoke-test AREA and Type support;
 - conservative boundary simplification;
+- direct waypoint-to-waypoint cleanup;
 - GUI startup-error logging to `runtime/mark-gui-error.log`;
 - successful selected-incident detail retrieval;
 - CAD `Lat/Lon:` polygon confirmation without address geocoding.
@@ -49,11 +57,14 @@ macOS and Linux install paths exist, but native acceptance testing is still requ
 
 ```text
 platform launcher
-  -> mark_update_entry.py
+  -> mark_region_entry.py
+      -> mark_update_entry.py
       -> mark_gui_entry.SafeMarkApp
           -> chp_gui.py + mark_app.py
               -> mark_backend.py
+                  -> chp_center_runtime.install()
                   -> mark_detail_runtime.install()
+                  -> mark_filter_runtime.install()
                   -> mark_postback_runtime.install()
                   -> notification_runtime.install()
                   -> service_area_runtime.apply_to_core()
@@ -62,7 +73,36 @@ platform launcher
                       -> chp_jamul_alert.main()
 ```
 
-Patch installation order matters. `mark_postback_runtime.install()` must run after `mark_detail_runtime.install()`. `install_generic_coordinate_match()` must run after the GeoJSON map has been applied so active polygon reasons use the loaded map/profile label instead of legacy Station 36 wording.
+Patch installation order matters. `chp_center_runtime.install()` must run before detail/filter patches so the selected center replaces the old Border-only fetch path. `mark_filter_runtime.install()` must run after `mark_detail_runtime.install()` so wildcard `*` filters override the default filter helpers. `mark_postback_runtime.install()` must run after `mark_detail_runtime.install()`. `install_generic_coordinate_match()` must run after the GeoJSON map has been applied so active polygon reasons use the loaded map/profile label instead of legacy Station 36 wording.
+
+## Release packaging
+
+Release packaging files:
+
+- `VERSION` — user-visible beta version.
+- `RELEASE_README.md` — first file to read in a ZIP package.
+- `RELEASE_NOTES.md` — beta release notes.
+- `scripts/validate_release.py` — required-file, JSON, and Python compile validation.
+- `scripts/build_release.py` — clean ZIP builder with manifest and SHA256 checksum.
+- `docs/RELEASE_PACKAGING.md` — packaging workflow.
+- `docs/BETA_RELEASE_CHECKLIST.md` — clean beta acceptance checklist.
+
+Build commands:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\validate_release.py
+.\.venv\Scripts\python.exe .\scripts\build_release.py
+```
+
+Expected output:
+
+```text
+dist/MARK-<version>.zip
+dist/MARK-<version>.zip.sha256
+dist/MARK-<version>/release-manifest.json
+```
+
+The release builder excludes `.env`, `runtime/`, virtual environments, `.git/`, logs, state files, ZIP/checksum outputs, and private runtime data.
 
 ## Current configuration
 
@@ -73,6 +113,8 @@ CHP_ALERT_STATE_FILE=runtime/state.json
 CHP_ALERT_DETAIL_LOG_FILE=runtime/details.jsonl
 CHP_ALERT_RETENTION_HOURS=72
 CHP_ALERT_LOG_LEVEL=INFO
+CHP_ALERT_COMM_CENTER=BCCC
+CHP_ALERT_COMM_CENTER_NAME=Border
 CHP_ALERT_SERVICE_AREA_FILE=service_area.geojson
 CHP_ALERT_SERVICE_AREA_LABEL=
 CHP_ALERT_EXISTING=0
@@ -105,6 +147,16 @@ WEBHOOK_BEARER_TOKEN=
 
 Never commit `.env`, credentials, runtime logs, state files, captured CHP pages, or private operational profile content.
 
+## CHP center and smoke-test maps
+
+- Center catalog: `data/chp_communications_centers.json`
+- Smoke-test bbox catalog: `data/chp_center_smoke_boundaries.json`
+- Static San Diego smoke-test map: `test_maps/san_diego_region_smoke_test.geojson`
+
+The GUI can generate a broad smoke-test map for any cataloged CHP center. Generated maps go to `runtime/test_maps/`, set `CHP_ALERT_AREA_PREFIXES=*`, and set `CHP_ALERT_TYPE_FRAGMENTS=*` so any listed incident can exercise the pipeline.
+
+Smoke-test maps are intentionally broad and must not be used as operational response boundaries.
+
 ## Notifications
 
 `notification_runtime.py` currently supports:
@@ -116,19 +168,9 @@ Never commit `.env`, credentials, runtime logs, state files, captured CHP pages,
 
 The GUI exposes `NOTIFY_PROVIDERS`, severity, delivery mode, retry/expiration, ntfy settings, Gotify settings, webhook settings, and a selected-provider test button. Multiple providers are comma-separated.
 
-Severity values:
+Severity values: `low`, `medium`, `high`, `critical`.
 
-- `low`
-- `medium`
-- `high`
-- `critical`
-
-Delivery values:
-
-- `notify_once`
-- `notify_on_update`
-- `until_acknowledged`
-- `until_expiration`
+Delivery values: `notify_once`, `notify_on_update`, `until_acknowledged`, `until_expiration`.
 
 Provider capability matters. MARK must not claim acknowledgement for providers that cannot report acknowledgement state. Current non-Pushover providers send delivery notifications and log capability warnings for acknowledgement-like modes.
 
@@ -155,6 +197,8 @@ MARK compares only the first two characters of the CHP `AREA` value, case-insens
 CHP_ALERT_AREA_PREFIXES=BC,El
 ```
 
+`*`, `all`, or `any` matches all AREAs for smoke testing.
+
 ### Type
 
 MARK searches the CHP `Type` column for case-insensitive fragments:
@@ -172,7 +216,9 @@ un w
 Repo
 ```
 
-This is substring-based, not exact-name matching.
+`*`, `all`, or `any` matches all Types for smoke testing.
+
+Detail-log `codes`, `contains_alert_code`, and `contains_11_82` are only the legacy 11-78 through 11-82 detector, not every Type/detail fragment match.
 
 ## Confirmed incident-detail defects and fixes
 
@@ -186,41 +232,41 @@ A live capture of incident `0047` proved the saved detail response was actually 
 
 ## Map workflow
 
-Use **Configuration → Service Area File → …** and choose a `.geojson` or `.json` Polygon. GeoJSON stores `[longitude, latitude]`; MARK internally uses `(latitude, longitude)`.
+Use **CHP Region / Service-Area Map → Service-area map → Browse** and choose a `.geojson` or `.json` Polygon. GeoJSON stores `[longitude, latitude]`; MARK internally uses `(latitude, longitude)`.
 
 **Simplify Boundary** removes near-collinear waypoints. Default tolerance is 25 m. Review before saving because excessive tolerance can move the operational boundary.
 
-## Statewide CHP requirements
-
-The statewide expansion is documented and partially seeded:
-
-- dynamic communications-center selection is still future work;
-- `data/chp_communications_centers.json` contains the live CAD center catalog;
-- current production path remains one selected center/profile at a time unless further code is added.
+**Set Line Start** + **Remove Between Start + Selected** removes intermediate waypoints along the shorter path between two selected endpoints and replaces that section with a straight line.
 
 ## File map
 
-- `start-chp-alerter.ps1` — Windows venv, dependency, syntax preflight, update-aware GUI launch
+- `start-chp-alerter.ps1` — Windows venv, dependency, syntax preflight, region-aware GUI launch
 - `start-chp-alerter.sh` — macOS/Linux launcher
 - `Install MARK - Windows.bat` — nontechnical Windows installer
 - `Install MARK - macOS.command` — nontechnical macOS installer
 - `install-mark-linux.sh` — Linux installer and desktop entry creator
-- `mark_update_entry.py` — update-aware GUI entry plus provider/policy controls
+- `mark_region_entry.py` — current GUI entry: version title, first-run helper, center/map controls
+- `mark_update_entry.py` — update-aware GUI plus provider/policy controls
 - `update_runtime.py` — safe Git update discovery and fast-forward installation
-- `mark_gui_entry.py` — safe Tk startup, profile filter manager, simplification UI
+- `mark_gui_entry.py` — safe Tk startup, profile filter manager, simplification and direct-line UI
 - `chp_gui.py` — branding, zone-extension editor, waypoint dragging
 - `mark_app.py` — dashboard base, subprocess management, shared config/map functions
 - `mark_backend.py` — 30-second policy, profile/map initialization, runtime patch order, generic service-area labels
+- `chp_center_runtime.py` — selected CHP communications-center fetch/parse support
+- `mark_filter_runtime.py` — wildcard-aware AREA/Type filter helpers
 - `mark_postback_runtime.py` — browser-faithful CHP selected-detail submission
 - `mark_detail_runtime.py` — AREA/type prefilter, strict parser, CAD-coordinate matching
 - `notification_runtime.py` — Pushover, ntfy, Gotify, and webhook adapters
 - `chp_detail_alert.py` — legacy detail model, codes, JSONL logging, alert formatting
 - `chp_jamul_alert.py` — base page fetch, state, polygon helper functions, legacy Pushover sender
 - `service_area_runtime.py` — GeoJSON validation and polygon installation
-- `geometry_utils.py` — near-collinear waypoint removal
+- `geometry_utils.py` — near-collinear waypoint removal and direct-line cleanup helper
+- `scripts/validate_release.py` — release validation
+- `scripts/build_release.py` — release ZIP/checksum/manifest builder
 - `tests/test_mark_runtime.py` — parser, coordinate, filter, and simplification regression tests
 - `tests/test_notification_runtime.py` — notification policy/provider tests
 - `tests/test_update_runtime.py` — update discovery/refusal tests
+- `RELEASE_README.md` — release package starting point
 - `MARK_QUICK_START_GUIDE.md` — nontechnical installation/use guide
 - `MARK_TECHNICAL_USER_GUIDE.md` — technical guide
 - `README.md` — operator/developer overview
@@ -241,11 +287,14 @@ git pull
 .\.venv\Scripts\python.exe -m py_compile `
   .\chp_jamul_alert.py `
   .\chp_detail_alert.py `
+  .\chp_center_runtime.py `
+  .\mark_filter_runtime.py `
   .\mark_detail_runtime.py `
   .\mark_postback_runtime.py `
   .\notification_runtime.py `
   .\update_runtime.py `
   .\mark_update_entry.py `
+  .\mark_region_entry.py `
   .\mark_backend.py `
   .\chp_gui.py `
   .\mark_gui_entry.py `
@@ -259,6 +308,13 @@ git pull
   .\tests\test_mark_runtime.py `
   .\tests\test_notification_runtime.py `
   .\tests\test_update_runtime.py -v
+```
+
+### Release validation/build
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\validate_release.py
+.\.venv\Scripts\python.exe .\scripts\build_release.py
 ```
 
 ### Safe live dry poll
@@ -282,24 +338,30 @@ Expected successful location reasons include `CHP detail Lat/Lon` and service-ar
 Confirm after this update:
 
 - GUI launches;
+- window title shows version;
+- first-run helper appears once and can be dismissed;
+- **CHP Region / Service-Area Map** is visible at the top;
+- CHP center dropdown works;
+- Load Center Test Map generates and loads a broad test map;
 - selected map loads;
-- Notification Providers and Alert Policy panel is visible;
+- Notification settings are visible;
 - ntfy/Gotify/webhook fields are visible;
-- provider test button works for the selected provider(s);
+- provider test button works for selected provider(s);
 - map/profile label changes active match wording;
 - monitor starts;
-- fast prefilter runs;
+- wildcard smoke-test filters work;
+- normal AREA/Type filters work;
 - browser-faithful detail selection works;
 - active match reasons do not say Station 36 unless configured as the label.
 
 ## Remaining work
 
-1. Native Windows acceptance of the latest provider-GUI and service-area-label changes.
+1. Native Windows acceptance of the latest region-aware GUI, first-run helper, and release package.
 2. Native macOS GUI acceptance.
 3. Native Linux/Fedora GUI acceptance.
-4. Add GUI-level tests if a GUI test harness is introduced.
-5. Add dynamic statewide communications-center selector and per-center AREA discovery.
-6. Add signed/versioned release packages for ZIP-only nontechnical users.
+4. Clean ZIP install test from `dist/MARK-<version>.zip` outside the dev checkout.
+5. Add CI for syntax/tests/release validation.
+6. Add signed release packages or signed update manifest for ZIP-only nontechnical users.
 7. Add durable acknowledgement service if non-Pushover providers need true acknowledgement tracking.
 
 ## User preferences for future work
@@ -312,4 +374,4 @@ Confirm after this update:
 
 ## Continuation point
 
-The latest work closes the two issues the user caught: active service-area match reasons no longer use hard-coded Station 36 text, and alternate notification providers are now visible/configurable in the GUI. Start the next thread by pulling `main`, running syntax/tests, launching the GUI, and checking the new provider panel plus service-area match wording locally.
+The latest work creates a beta-distribution foundation: version file, release readme, release notes, release validation, release ZIP/checksum/manifest builder, hardened ignore rules, first-run helper, and updated manuals. Start the next thread by pulling `main`, running syntax/tests, running `scripts/validate_release.py`, building a ZIP with `scripts/build_release.py`, then testing the ZIP from a clean folder on Windows.
