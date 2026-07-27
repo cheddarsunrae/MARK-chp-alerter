@@ -1,5 +1,24 @@
 # MARK release notes
 
+## 0.9.0-beta.5
+
+Multi-select CHP AREA prefix update.
+
+### Added
+
+- Multi-select CHP AREA checkboxes in **CHP Region / Service-Area Map**.
+- Required regional AREA prefix enforcement for selected CHP centers.
+- Border Communications Center / San Diego County now always includes `Bo` in addition to user-selected areas such as `Sa` or `El`.
+- Runtime normalization that migrates older `BC` beta configs to `Bo` for Border-area matching.
+
+### Behavior
+
+- Users can select multiple CHP AREA prefixes instead of choosing only one preset.
+- Selecting San Diego under BCCC stores `Bo,Sa`, so the regional Border/San Diego County AREA remains searched.
+- Selecting El Cajon under BCCC stores `Bo,El`.
+- Selecting smoke-test mode still stores `*` and searches all AREA rows.
+- Alert Type fragments remain fixed default triggers and are not exposed as a normal area selector.
+
 ## 0.9.0-beta.4
 
 CHP AREA prefix GUI update.
