@@ -1,5 +1,23 @@
 # MARK release notes
 
+## 0.9.0-beta.3
+
+Address Box Map helper update.
+
+### Added
+
+- **Address Box Map** generator in the CHP Region / Service-Area Map panel.
+- `address_box_runtime.py` for geocoding an address once and building a square GeoJSON service-area polygon around it.
+- `CHP_ALERT_ADDRESS_BOX_ADDRESS` and `CHP_ALERT_ADDRESS_BOX_HALF_SIZE_METERS` settings to remember the helper inputs.
+- Unit tests for generated address-box GeoJSON and half-size validation.
+
+### Behavior
+
+- The user enters an address and a box half-size in metres.
+- MARK geocodes the address once, writes a square GeoJSON under `runtime/address_maps/`, loads it as the active service-area map, and saves the configuration.
+- Generated address-box maps reset `CHP_ALERT_BOUNDARY_BUFFER_METERS` to `0`, so the generated box is the alerting footprint unless the user intentionally adds a buffer later.
+- The address box is an approximate square, not a circular radius. Users must visually inspect the generated map before operational use.
+
 ## 0.9.0-beta.2
 
 Boundary-buffer / near-boundary alerting update.
