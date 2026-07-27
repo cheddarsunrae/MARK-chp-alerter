@@ -131,7 +131,7 @@ CHP_ALERT_BOUNDARY_BUFFER_METERS=0
 CHP_ALERT_ADDRESS_BOX_ADDRESS=
 CHP_ALERT_ADDRESS_BOX_HALF_SIZE_METERS=3000
 CHP_ALERT_PROFILE=
-CHP_ALERT_AREA_PREFIXES=BC,El
+CHP_ALERT_AREA_PREFIXES=Bo,El
 CHP_ALERT_TYPE_FRAGMENTS=Unk,1140,1141,Min,Maj,1179,1180,1178,un w,Repo
 CHP_ALERT_EXISTING=0
 CHP_ALERT_UPDATES=0
@@ -143,9 +143,9 @@ CHP_ALERT_UPDATES=0
 
 `CHP_ALERT_ADDRESS_BOX_ADDRESS` and `CHP_ALERT_ADDRESS_BOX_HALF_SIZE_METERS` store the last address-box helper inputs. The generated GeoJSON is stored under `runtime/address_maps/`; runtime output is intentionally excluded from release ZIPs and Git.
 
-`CHP_ALERT_AREA_PREFIXES=*` and `CHP_ALERT_TYPE_FRAGMENTS=*` are smoke-test settings. Do not leave them enabled for normal operational use unless that is intentional.
+`CHP_ALERT_AREA_PREFIXES=*` is a smoke-test setting that searches all AREA rows in the selected CHP center. `CHP_ALERT_TYPE_FRAGMENTS` should remain at the fixed default trigger set; old beta configs that saved `*` for Type are normalized back to defaults so low-value categories such as Traffic Hazard do not become alert triggers.
 
-## CHP center selection
+## CHP center and AREA selection
 
 The GUI exposes **CHP Region / Service-Area Map** at the top of Configuration.
 
@@ -161,7 +161,15 @@ The broad smoke-test boundary catalog is stored at:
 data/chp_center_smoke_boundaries.json
 ```
 
-Clicking **Load Center Test Map** writes a generated GeoJSON under `runtime/test_maps/`, sets AREA and Type to `*`, resets the boundary buffer to `0`, and saves the configuration. That is a test mode only.
+The **CHP AREA Prefixes** panel includes checkbox indicators plus larger toggle buttons. Select every CHP AREA that overlaps the active map. For BCCC / San Diego County, MARK always includes `Bo` as the regional AREA prefix in addition to selected subareas such as `Sa`, `El`, `Oc`, or `Te`.
+
+Clicking **Load Center Test Map** writes a generated GeoJSON under `runtime/test_maps/`, sets `AREA=*`, resets the boundary buffer to `0`, and saves the configuration. That is a test mode only. Alert Type fragments are not changed by the test-map workflow.
+
+## Region/map save behavior
+
+Map, center, AREA, address-box, and boundary-buffer changes are read by the backend process when the monitor starts. A running monitor does not automatically inherit those changes unless it is restarted.
+
+Use **Save Region/Map** after changing any of these settings. MARK backs up and clears the active state file before the next run so stale dedupe or relevance decisions from the old zone do not carry into the new zone. If the monitor is running, the GUI prompts to restart it immediately.
 
 ## Notification providers
 
@@ -247,7 +255,7 @@ Workflow:
 1. Enter an address.
 2. Enter a box half-size in metres.
 3. Click **Build Address Box Map**.
-4. MARK geocodes the address once, writes a square GeoJSON under `runtime/address_maps/`, loads it as the active service-area map, and saves the configuration.
+4. MARK geocodes the address once, writes a square GeoJSON under `runtime/address_maps/`, loads it as the active service-area map, saves the configuration, clears stale state, and prompts for restart when needed.
 
 The half-size is the distance from the geocoded center point to each side of the square. For example, `3000` creates an approximate 6 km by 6 km box. The map is a square approximation, not a circular radius, and must be visually reviewed before operational use.
 
@@ -300,7 +308,6 @@ MARK removes the intermediate waypoints along the shorter boundary path and keep
 .\.venv\Scripts\python.exe -m py_compile `
   .\mark_region_entry.py `
   .\mark_backend.py `
-  .\address_box_runtime.py `
   .\notification_runtime.py `
   .\update_runtime.py `
   .\mark_update_entry.py `
@@ -325,7 +332,7 @@ MARK removes the intermediate waypoints along the shorter boundary path and keep
 - Profile and map changes require monitor restart
 - Active match reasons should no longer say Station 36 unless the label explicitly contains Station 36
 - If a relevant call is just outside the polygon, set a conservative boundary buffer and re-test with a dry poll
-- If an address box map geocodes the wrong place, enter a more specific address and visually inspect before saving it for operational use
+- If Traffic Hazard or another non-alert category pages, confirm `CHP_ALERT_TYPE_FRAGMENTS` has been restored to the fixed default trigger list and restart the monitor
 
 ## Operational hardening before broad deployment
 
