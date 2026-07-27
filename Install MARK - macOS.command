@@ -39,10 +39,10 @@ cat > "Start MARK.command" <<'LAUNCH'
 set -eu
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT"
-exec "$ROOT/.venv/bin/python" "$ROOT/mark_region_entry.py"
+exec "$ROOT/.venv/bin/python" "$ROOT/mark_region_reload_entry.py"
 LAUNCH
 chmod +x "Start MARK.command" start-chp-alerter.sh
 
 printf '\nInstallation complete.\n\nDouble-click "Start MARK.command" to open MARK.\n'
 read -r -p "Press Return to open MARK now..." _
-exec "$PYTHON" "$ROOT/mark_region_entry.py"
+exec "$PYTHON" "$ROOT/mark_region_reload_entry.py"
