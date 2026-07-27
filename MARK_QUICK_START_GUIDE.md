@@ -14,9 +14,9 @@ You need:
 
 - A Windows, macOS, or Linux computer that can stay powered on.
 - An internet connection.
-- The MARK download folder supplied by your administrator.
+- The MARK ZIP package supplied by your administrator.
 - Notification credentials supplied by your administrator, such as Pushover or ntfy.
-- A service-area map file, normally ending in `.geojson`.
+- A service-area map file, normally ending in `.geojson`, unless you are only doing a smoke test.
 
 Do not download random copies of MARK from search results. Use the download link or package supplied by your department, station, or MARK administrator.
 
@@ -57,23 +57,48 @@ chmod +x install-mark-linux.sh
 5. Enter your computer password if asked.
 6. The installer adds **MARK CHP Alerter** to your application menu and opens MARK.
 
-## First-time setup
+## First launch
+
+The first time MARK opens, it may show a welcome helper. Use it to open this guide, configure notifications, or load a broad test map.
+
+The window title shows the MARK version. Send that version number to your administrator when reporting a problem.
+
+## Fast smoke test
+
+A smoke test confirms MARK can poll CHP, retrieve incident details, read the CAD coordinate, check a map, and attempt alerts.
 
 1. Open **Configuration**.
-2. Choose the service-area map supplied by your administrator.
-3. Open **Profiles / Regions / Incident Types**.
-4. Choose or create the profile for your station or agency.
-5. Confirm the communications center, AREA values, and incident types.
-6. Enter the notification settings supplied by your administrator.
-7. Click **Save**.
-8. Click **Test Notification**.
-9. Confirm the test reaches the intended phone or group.
-10. Click **Start Monitor**.
+2. Find **CHP Region / Service-Area Map** near the top.
+3. Choose the correct **CHP center**.
+4. Click **Load Center Test Map**.
+5. Confirm that MARK warns the map is for testing only.
+6. Configure notifications with **Notification Settings**.
+7. Click **Test Selected Providers**.
+8. Click **One Poll (Dry Run)**.
+
+Smoke-test maps are intentionally broad and are not operational response boundaries.
+
+## Operational setup
+
+Before real use:
+
+1. Stop the monitor if it is running.
+2. Open **Configuration**.
+3. In **CHP Region / Service-Area Map**, choose the CHP center.
+4. Click **Browse** next to **Service-area map** and select the real station or agency map.
+5. Open **Profiles / Regions / Incident Types**.
+6. Confirm AREA values and incident type fragments.
+7. Open **Notification Settings**.
+8. Enter the notification settings supplied by your administrator.
+9. Click **Save Region/Map** or **Save**.
+10. Click **Test Selected Providers**.
+11. Confirm the test reaches the intended phone or group.
+12. Click **Start Monitor**.
 
 ## Normal daily use
 
 1. Open MARK.
-2. Confirm the correct profile and map are loaded.
+2. Confirm the correct CHP center, profile, and map are loaded.
 3. Click **Start Monitor**.
 4. Leave the computer powered on and connected to the internet.
 5. Do not close MARK while it is monitoring.
@@ -117,6 +142,17 @@ Delivery options may include notify once, notify on update, repeat until acknowl
 5. Review the proposed change.
 6. Save to a new filename before replacing the original.
 
+## Removing waypoints between two points
+
+1. Stop the monitor.
+2. Enable map editing.
+3. Click the first waypoint.
+4. Click **Set Line Start**.
+5. Click the second waypoint.
+6. Click **Remove Between Start + Selected**.
+7. Review the new straight boundary segment.
+8. Save only if the boundary is correct.
+
 ## Troubleshooting
 
 ### MARK does not open
@@ -128,9 +164,9 @@ Delivery options may include notify once, notify on update, repeat until acknowl
 ### No alerts arrive
 
 - Confirm MARK says it is running.
-- Click **Test Notification**.
+- Click **Test Selected Providers**.
 - Check the computer's internet connection.
-- Confirm the correct profile, map, and recipient settings are loaded.
+- Confirm the correct CHP center, profile, map, and recipient settings are loaded.
 
 ### Update check fails
 
@@ -150,4 +186,5 @@ Change its power settings so it remains awake while MARK is operating. Closing a
 - Do not rely on MARK as the only alerting path.
 - Protect notification tokens and passwords.
 - Test each profile before operational use.
+- Switch from smoke-test maps to real service-area maps before operational use.
 - Report repeated CHP parsing errors to the administrator.
