@@ -60,7 +60,7 @@ platform launcher
               -> mark_postback_runtime.install()
               -> notification_runtime.install()
               -> service-area loading
-              -> generic coordinate-match label patch
+              -> generic coordinate-match label / boundary-buffer patch
               -> chp_detail_alert.main()
 ```
 
@@ -127,6 +127,7 @@ CHP_ALERT_COMM_CENTER=BCCC
 CHP_ALERT_COMM_CENTER_NAME=Border
 CHP_ALERT_SERVICE_AREA_FILE=service_area.geojson
 CHP_ALERT_SERVICE_AREA_LABEL=
+CHP_ALERT_BOUNDARY_BUFFER_METERS=0
 CHP_ALERT_PROFILE=
 CHP_ALERT_AREA_PREFIXES=BC,El
 CHP_ALERT_TYPE_FRAGMENTS=Unk,1140,1141,Min,Maj,1179,1180,1178,un w,Repo
@@ -135,6 +136,8 @@ CHP_ALERT_UPDATES=0
 ```
 
 `CHP_ALERT_SERVICE_AREA_LABEL` controls human-readable match text. Leave it blank for generic `active service-area polygon` wording or set a profile/station/agency label.
+
+`CHP_ALERT_BOUNDARY_BUFFER_METERS` controls near-boundary alerts. `0` means strict inside-polygon only. A positive value alerts for qualifying incidents that are outside the polygon but within that many metres of the active boundary. For example, `12000` is about 7.5 miles.
 
 `CHP_ALERT_AREA_PREFIXES=*` and `CHP_ALERT_TYPE_FRAGMENTS=*` are smoke-test settings. Do not leave them enabled for normal operational use unless that is intentional.
 
@@ -154,7 +157,7 @@ The broad smoke-test boundary catalog is stored at:
 data/chp_center_smoke_boundaries.json
 ```
 
-Clicking **Load Center Test Map** writes a generated GeoJSON under `runtime/test_maps/`, sets AREA and Type to `*`, and saves the configuration. That is a test mode only.
+Clicking **Load Center Test Map** writes a generated GeoJSON under `runtime/test_maps/`, sets AREA and Type to `*`, resets the boundary buffer to `0`, and saves the configuration. That is a test mode only.
 
 ## Notification providers
 
@@ -231,6 +234,19 @@ Provider capability matters. Persistent acknowledgement is guaranteed only when 
 
 MARK accepts GeoJSON Polygon files. GeoJSON order is `[longitude, latitude]`; MARK internally uses `(latitude, longitude)`.
 
+### Boundary buffer / near-boundary alerting
+
+The normal decision remains map-first:
+
+```text
+inside polygon = alert
+outside polygon = no alert
+```
+
+When `CHP_ALERT_BOUNDARY_BUFFER_METERS` is positive, MARK also alerts for qualifying incidents outside the polygon but within that distance of the nearest polygon segment. The match reason explicitly states that the incident is outside the polygon but within the buffer, including both distance from the boundary and the configured buffer.
+
+Use this for edge cases such as a relevant TC just outside a hand-drawn response boundary. Do not use a large buffer unless the operational users understand that it expands the alerting footprint.
+
 ### Broad smoke-test maps
 
 The repository includes a static test-only broad San Diego/Border-region map:
@@ -288,6 +304,7 @@ MARK removes the intermediate waypoints along the shorter boundary path and keep
 - Notification failures: `chp-alerter.notifications` log entries
 - Profile and map changes require monitor restart
 - Active match reasons should no longer say Station 36 unless the label explicitly contains Station 36
+- If a relevant call is just outside the polygon, set a conservative boundary buffer and re-test with a dry poll
 
 ## Operational hardening before broad deployment
 
