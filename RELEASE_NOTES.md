@@ -1,5 +1,21 @@
 # MARK release notes
 
+## 0.9.0-beta.6
+
+Region/map restart and Traffic Hazard hardening update.
+
+### Fixed
+
+- Saved region/map changes now clear stale monitor dedupe state by backing up the active state file before the next run.
+- The GUI now prompts to restart the running monitor after a region, AREA, address-box, or center-test map change, because the backend process reads map and AREA settings at launch.
+- Old beta configs with `CHP_ALERT_TYPE_FRAGMENTS=*` are normalized back to the fixed default trigger set so non-alert categories such as Traffic Hazard do not become alertable.
+- Runtime filter installation also treats Type wildcard as the fixed default trigger set, while still allowing `AREA=*` for broad smoke testing.
+
+### Improved
+
+- The CHP AREA panel now includes larger toggle buttons in addition to the checkbox indicators, making area selection easier on Windows/Tkinter.
+- The **Save Region/Map** button now describes that it clears stale state and can restart the monitor.
+
 ## 0.9.0-beta.5
 
 Multi-select CHP AREA prefix update.
