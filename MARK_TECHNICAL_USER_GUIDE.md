@@ -4,6 +4,18 @@
 
 MARK is a cross-platform Python/Tkinter application for map-aware monitoring of the public California Highway Patrol CAD traffic page. It supports Windows, macOS, and Linux from the same `main` branch. Separate operating-system branches are unnecessary; platform-specific installers and launchers live in one codebase.
 
+> MARK is supplemental awareness only. It is not an official CAD terminal, pager, radio, or dispatch replacement.
+
+## Versioning
+
+The application version is stored in:
+
+```text
+VERSION
+```
+
+The normal GUI displays the version in the window title when launched through `mark_region_entry.py`.
+
 ## Supported platforms
 
 ### Windows
@@ -32,16 +44,19 @@ MARK is a cross-platform Python/Tkinter application for map-aware monitoring of 
 
 The development repository is private. Nontechnical users should receive a versioned ZIP or installer from an approved release page or department-controlled location rather than being asked to use Git or GitHub.
 
-A release package should contain the application, platform installers, `.env.example`, profile templates, both user guides, and a checksum/version file.
+A release package should contain the application, platform installers, `.env.example`, profile/test-map data, both user guides, release notes, a manifest, and a checksum file.
 
 ## Runtime chain
 
 ```text
 platform launcher
-  -> mark_update_entry.py
+  -> mark_region_entry.py
+      -> mark_update_entry.py
       -> mark_gui_entry.py
           -> mark_backend.py
+              -> chp_center_runtime.install()
               -> mark_detail_runtime.install()
+              -> mark_filter_runtime.install()
               -> mark_postback_runtime.install()
               -> notification_runtime.install()
               -> service-area loading
@@ -54,7 +69,7 @@ platform launcher
 ### Windows
 
 ```powershell
-cd C:\path\to\chp-alerter
+cd C:\path\to\MARK
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 .\start-chp-alerter.ps1
 ```
@@ -62,7 +77,7 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 ### macOS
 
 ```bash
-cd /path/to/chp-alerter
+cd /path/to/MARK
 chmod +x "Install MARK - macOS.command" start-chp-alerter.sh
 ./"Install MARK - macOS.command"
 ```
@@ -70,10 +85,34 @@ chmod +x "Install MARK - macOS.command" start-chp-alerter.sh
 ### Linux
 
 ```bash
-cd /path/to/chp-alerter
+cd /path/to/MARK
 chmod +x install-mark-linux.sh start-chp-alerter.sh
 ./install-mark-linux.sh
 ```
+
+## Release packaging
+
+Validate the tree:
+
+```bash
+python scripts/validate_release.py
+```
+
+Build a clean ZIP:
+
+```bash
+python scripts/build_release.py
+```
+
+Artifacts are written under `dist/`:
+
+```text
+MARK-<version>.zip
+MARK-<version>.zip.sha256
+MARK-<version>/release-manifest.json
+```
+
+The release builder excludes `.env`, `runtime/`, virtual environments, `.git/`, logs, state files, and build outputs.
 
 ## Core configuration
 
@@ -84,6 +123,8 @@ CHP_ALERT_STATE_FILE=runtime/state.json
 CHP_ALERT_DETAIL_LOG_FILE=runtime/details.jsonl
 CHP_ALERT_RETENTION_HOURS=72
 CHP_ALERT_LOG_LEVEL=INFO
+CHP_ALERT_COMM_CENTER=BCCC
+CHP_ALERT_COMM_CENTER_NAME=Border
 CHP_ALERT_SERVICE_AREA_FILE=service_area.geojson
 CHP_ALERT_SERVICE_AREA_LABEL=
 CHP_ALERT_PROFILE=
@@ -94,6 +135,26 @@ CHP_ALERT_UPDATES=0
 ```
 
 `CHP_ALERT_SERVICE_AREA_LABEL` controls human-readable match text. Leave it blank for generic `active service-area polygon` wording or set a profile/station/agency label.
+
+`CHP_ALERT_AREA_PREFIXES=*` and `CHP_ALERT_TYPE_FRAGMENTS=*` are smoke-test settings. Do not leave them enabled for normal operational use unless that is intentional.
+
+## CHP center selection
+
+The GUI exposes **CHP Region / Service-Area Map** at the top of Configuration.
+
+The center catalog is stored at:
+
+```text
+data/chp_communications_centers.json
+```
+
+The broad smoke-test boundary catalog is stored at:
+
+```text
+data/chp_center_smoke_boundaries.json
+```
+
+Clicking **Load Center Test Map** writes a generated GeoJSON under `runtime/test_maps/`, sets AREA and Type to `*`, and saves the configuration. That is a test mode only.
 
 ## Notification providers
 
@@ -166,25 +227,19 @@ Delivery values:
 
 Provider capability matters. Persistent acknowledgement is guaranteed only when a provider exposes acknowledgement state or MARK operates its own acknowledgement service.
 
-## Profiles and statewide operation
-
-Profiles should contain communications-center code and name, selected AREA values, Type fragments, service-area polygon, poll interval, alert-existing/update settings, and notification routing.
-
-The statewide catalog is stored in `data/chp_communications_centers.json`. The durable design is to read the live CHP center dropdown and record AREA values observed per center.
-
 ## Map operations
 
 MARK accepts GeoJSON Polygon files. GeoJSON order is `[longitude, latitude]`; MARK internally uses `(latitude, longitude)`.
 
-### Broad smoke-test map
+### Broad smoke-test maps
 
-The repository includes a test-only broad San Diego/Border-region map:
+The repository includes a static test-only broad San Diego/Border-region map:
 
 ```text
 test_maps/san_diego_region_smoke_test.geojson
 ```
 
-Use this to confirm that the polling, detail selection, CAD coordinate parsing, polygon check, and notification path are working without waiting for a call inside a small station polygon. It is intentionally oversized and must not be used as a real response boundary.
+The GUI can also generate a broad smoke-test map for any cataloged CHP communications center. These maps are intentionally oversized and must not be used as real response boundaries.
 
 ### Conservative simplification
 
@@ -208,6 +263,7 @@ MARK removes the intermediate waypoints along the shorter boundary path and keep
 
 ```powershell
 .\.venv\Scripts\python.exe -m py_compile `
+  .\mark_region_entry.py `
   .\mark_backend.py `
   .\notification_runtime.py `
   .\update_runtime.py `
@@ -235,9 +291,9 @@ MARK removes the intermediate waypoints along the shorter boundary path and keep
 
 ## Operational hardening before broad deployment
 
-- Publish versioned release packages.
-- Add CI and automated tests.
+- Test the generated release ZIP from a clean folder.
+- Add CI and automated release artifact generation.
 - Add checksummed or signed downloads.
-- Add statewide center selection and AREA discovery.
+- Add a signed update manifest for ZIP-only users.
 - Add durable acknowledgement state where providers lack it.
 - Perform native acceptance testing on Windows, macOS, Fedora, and Ubuntu.
