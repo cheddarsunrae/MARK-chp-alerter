@@ -1,5 +1,22 @@
 # MARK release notes
 
+## 0.9.0-beta.2
+
+Boundary-buffer / near-boundary alerting update.
+
+### Added
+
+- Configurable `CHP_ALERT_BOUNDARY_BUFFER_METERS` setting.
+- GUI field for **Boundary buffer metres** in the CHP Region / Service-Area Map panel.
+- Near-boundary match reason that clearly says the incident is outside the polygon but within the configured buffer.
+- Unit tests for strict outside behavior and near-boundary buffer alerting.
+
+### Behavior
+
+- `0` keeps the previous strict behavior: incidents must be inside the polygon to alert.
+- A positive number of metres alerts for qualifying incidents outside but near the active service-area boundary.
+- Match text includes both the distance from the boundary and the configured buffer.
+
 ## 0.9.0-beta.1
 
 Initial broad beta packaging milestone.
