@@ -11,6 +11,7 @@ import mark_backend
 from geometry_utils import remove_shorter_path_between, simplify_closed_polygon
 from mark_detail_runtime import (
     area_matches,
+    configured_area_prefixes,
     extract_detail_coordinates,
     match_incident,
     matched_area_prefixes,
@@ -129,17 +130,30 @@ class FastFilterTests(unittest.TestCase):
     def test_station_36_area_prefix_defaults(self) -> None:
         with patch.dict(os.environ, {}, clear=False):
             os.environ.pop("CHP_ALERT_AREA_PREFIXES", None)
-            self.assertTrue(area_matches("BC"))
+            os.environ.pop("CHP_ALERT_COMM_CENTER", None)
+            self.assertTrue(area_matches("Border"))
             self.assertTrue(area_matches("El Cajon"))
             self.assertFalse(area_matches("San Diego"))
             self.assertFalse(area_matches("Temecula"))
             self.assertFalse(area_matches("Oceanside"))
 
     def test_area_prefixes_use_first_two_characters(self) -> None:
-        with patch.dict(os.environ, {"CHP_ALERT_AREA_PREFIXES": "Sa,Oc"}):
+        with patch.dict(os.environ, {"CHP_ALERT_AREA_PREFIXES": "Sa,Oc", "CHP_ALERT_COMM_CENTER": ""}):
             self.assertTrue(area_matches("San Diego"))
             self.assertTrue(area_matches("Oceanside"))
             self.assertFalse(area_matches("El Cajon"))
+
+    def test_border_center_always_includes_border_region_prefix(self) -> None:
+        with patch.dict(os.environ, {"CHP_ALERT_AREA_PREFIXES": "Sa", "CHP_ALERT_COMM_CENTER": "BCCC"}):
+            self.assertEqual(configured_area_prefixes(), ("Bo", "Sa"))
+            self.assertTrue(area_matches("Border"))
+            self.assertTrue(area_matches("San Diego"))
+            self.assertFalse(area_matches("El Cajon"))
+
+    def test_legacy_bc_prefix_normalizes_to_border(self) -> None:
+        with patch.dict(os.environ, {"CHP_ALERT_AREA_PREFIXES": "BC", "CHP_ALERT_COMM_CENTER": ""}):
+            self.assertEqual(configured_area_prefixes(), ("Bo",))
+            self.assertTrue(area_matches("Border"))
 
     def test_type_fragments_are_case_insensitive_substrings(self) -> None:
         with patch.dict(
