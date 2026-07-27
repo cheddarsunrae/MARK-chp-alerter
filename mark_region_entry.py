@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import webbrowser
 from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
@@ -16,12 +17,23 @@ import mark_update_entry
 ROOT = Path(__file__).resolve().parent
 CENTERS_FILE = ROOT / "data" / "chp_communications_centers.json"
 BOUNDARIES_FILE = ROOT / "data" / "chp_center_smoke_boundaries.json"
+VERSION_FILE = ROOT / "VERSION"
+QUICK_START_GUIDE = ROOT / "MARK_QUICK_START_GUIDE.md"
+FIRST_RUN_FLAG = ROOT / "runtime" / "first-run-helper-dismissed"
 DEFAULT_CENTER_CODE = "BCCC"
 DEFAULT_CENTER_NAME = "Border"
 
 
 def _slug(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", value.casefold()).strip("-") or "center"
+
+
+def read_version() -> str:
+    try:
+        value = VERSION_FILE.read_text(encoding="utf-8").strip()
+    except OSError:
+        value = "0.0.0-local"
+    return value or "0.0.0-local"
 
 
 def load_centers() -> list[dict[str, str]]:
@@ -66,9 +78,12 @@ class RegionMarkApp(mark_update_entry.UpdatingMarkApp):
     """Add obvious center and service-area map controls to the existing GUI."""
 
     def __init__(self) -> None:
+        self.app_version = read_version()
         self.region_status_text: tk.StringVar | None = None
         self.center_options = load_centers()
         super().__init__()
+        self.title(f"{mark_app.APP_TITLE} v{self.app_version}")
+        self.after(900, self._maybe_show_first_run_helper)
 
     def _defaults(self) -> dict[str, str]:
         values = super()._defaults()
@@ -93,6 +108,91 @@ class RegionMarkApp(mark_update_entry.UpdatingMarkApp):
             "CHP_ALERT_TYPE_FRAGMENTS",
         ):
             self.vars.setdefault(key, tk.StringVar(value=defaults.get(key, "")))
+
+    def _open_local_file(self, path: Path) -> None:
+        try:
+            if os.name == "nt":
+                os.startfile(str(path))  # type: ignore[attr-defined]
+            else:
+                webbrowser.open(path.resolve().as_uri())
+        except Exception as exc:
+            messagebox.showerror("Could not open file", str(exc), parent=self)
+
+    def _dismiss_first_run_helper(self, dialog: tk.Toplevel) -> None:
+        try:
+            FIRST_RUN_FLAG.parent.mkdir(parents=True, exist_ok=True)
+            FIRST_RUN_FLAG.write_text("dismissed\n", encoding="utf-8")
+        except OSError:
+            pass
+        dialog.destroy()
+
+    def _maybe_show_first_run_helper(self) -> None:
+        if FIRST_RUN_FLAG.exists():
+            return
+        dialog = tk.Toplevel(self)
+        dialog.title("Welcome to MARK")
+        dialog.geometry("640x470")
+        dialog.minsize(580, 420)
+        dialog.transient(self)
+
+        body = ttk.Frame(dialog, padding=16)
+        body.pack(fill="both", expand=True)
+        ttk.Label(
+            body,
+            text=f"Welcome to MARK {self.app_version}",
+            style="PanelHead.TLabel",
+        ).pack(anchor="w")
+        ttk.Label(
+            body,
+            text=(
+                "MARK is ready for beta setup. Start with a broad center smoke-test map "
+                "to confirm the CHP polling/detail/notification path, then switch to a real "
+                "station or agency service-area map before operational use."
+            ),
+            wraplength=590,
+        ).pack(anchor="w", pady=(10, 0))
+        ttk.Label(
+            body,
+            text=(
+                "Supplemental awareness only: MARK does not replace dispatch, CAD, radio, "
+                "paging, or agency procedures."
+            ),
+            wraplength=590,
+            style="PanelHead.TLabel",
+        ).pack(anchor="w", pady=(12, 0))
+
+        steps = ttk.LabelFrame(body, text="Suggested first-run steps", padding=10)
+        steps.pack(fill="x", pady=(14, 0))
+        for text in (
+            "1. Pick the CHP communications center for the station or agency.",
+            "2. Click Load Center Test Map for a broad smoke test.",
+            "3. Configure and test notifications.",
+            "4. Replace the smoke-test map with the real service-area map before real use.",
+        ):
+            ttk.Label(steps, text=text, wraplength=560).pack(anchor="w", pady=2)
+
+        buttons = ttk.Frame(body)
+        buttons.pack(fill="x", pady=(18, 0))
+        ttk.Button(
+            buttons,
+            text="Open Quick Start",
+            command=lambda: self._open_local_file(QUICK_START_GUIDE),
+        ).pack(side="left", padx=(0, 6))
+        ttk.Button(
+            buttons,
+            text="Notification Settings",
+            command=self.open_notification_settings,
+        ).pack(side="left", padx=(0, 6))
+        ttk.Button(
+            buttons,
+            text="Load Center Test Map",
+            command=self.load_center_smoke_test_map,
+        ).pack(side="left", padx=(0, 6))
+        ttk.Button(
+            buttons,
+            text="Dismiss",
+            command=lambda: self._dismiss_first_run_helper(dialog),
+        ).pack(side="right")
 
     def load_configuration(self) -> None:
         super().load_configuration()
