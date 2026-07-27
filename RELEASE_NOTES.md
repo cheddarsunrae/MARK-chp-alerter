@@ -1,5 +1,22 @@
 # MARK release notes
 
+## 0.9.0-beta.4
+
+CHP AREA prefix GUI update.
+
+### Added
+
+- **CHP AREA Prefixes** panel inside **CHP Region / Service-Area Map**.
+- AREA preset selector for common configurations such as `San Diego`, `El Cajon`, `Border + El Cajon`, `San Diego + El Cajon`, and `All CHP Areas / smoke test`.
+- Editable AREA prefix field for custom CHP AREA combinations.
+- Validation and normalization for `CHP_ALERT_AREA_PREFIXES`, including aliases such as `San Diego` -> `Sa` and `El Cajon` -> `El`.
+
+### Behavior
+
+- CHP AREA prefixes are now easy to change when the active map changes, such as switching from an El Cajon/Border map to a home-address box in San Diego.
+- Alert Type fragments remain hidden from the primary Region panel and are treated as stable alert triggers, not a normal end-user area selector.
+- The Region summary now emphasizes AREA selection and describes Type fragments as fixed defaults.
+
 ## 0.9.0-beta.3
 
 Address Box Map helper update.
