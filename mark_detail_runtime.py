@@ -4,8 +4,12 @@
 CHP detail postbacks can return the selected incident panel together with the
 complete incident listing. This module installs a strict parser, treats the CHP
 ``Lat/Lon:`` detail-header value as authoritative, and avoids unnecessary detail
-requests by filtering listing rows with configurable AREA prefixes and Type
-fragments.
+requests by filtering listing rows with configurable AREA prefixes.
+
+Important operational rule: calls inside a configured AREA are tracked even when
+their current CHP Type is not alertable. CHP calls can upgrade after the first
+listing row appears, so Type fragments are used as alert triggers, not as a
+permanent reason to ignore in-area incidents.
 """
 from __future__ import annotations
 
@@ -89,21 +93,40 @@ def configured_type_fragments() -> tuple[str, ...]:
     return values or DEFAULT_TYPE_FRAGMENTS
 
 
-def area_matches(area: str) -> bool:
+def _has_wildcard(values: tuple[str, ...]) -> bool:
+    return any(value.strip() == "*" for value in values)
+
+
+def matched_area_prefixes(area: str) -> tuple[str, ...]:
+    prefixes = configured_area_prefixes()
+    if _has_wildcard(prefixes):
+        return ("*",)
     normalized = core.normalize_space(area).casefold()
-    return any(
-        normalized.startswith(prefix.casefold()[:2])
-        for prefix in configured_area_prefixes()
-        if prefix
+    return tuple(
+        prefix
+        for prefix in prefixes
+        if prefix and normalized.startswith(prefix.casefold()[:2])
     )
+
+
+def matched_type_fragments(incident_type: str) -> tuple[str, ...]:
+    fragments = configured_type_fragments()
+    if _has_wildcard(fragments):
+        return ("*",)
+    normalized = core.normalize_space(incident_type).casefold()
+    return tuple(
+        fragment
+        for fragment in fragments
+        if fragment and fragment.casefold() in normalized
+    )
+
+
+def area_matches(area: str) -> bool:
+    return bool(matched_area_prefixes(area))
 
 
 def type_matches(incident_type: str) -> bool:
-    normalized = core.normalize_space(incident_type).casefold()
-    return any(
-        fragment.casefold() in normalized
-        for fragment in configured_type_fragments()
-    )
+    return bool(matched_type_fragments(incident_type))
 
 
 def _apply_direction(value: float, direction: str | None) -> float:
@@ -285,11 +308,12 @@ _ORIGINAL_PARSE_INCIDENTS = detail.parse_incidents
 
 
 def parse_incidents(html: str) -> list[Any]:
-    """Filter the listing before any detail postback is requested."""
+    """Retain AREA-matching rows; Type fragments are alert triggers, not ignores."""
     incidents = _ORIGINAL_PARSE_INCIDENTS(html)
     selected: list[Any] = []
     for incident in incidents:
-        if not area_matches(incident.area):
+        area_hits = matched_area_prefixes(incident.area)
+        if not area_hits:
             detail.LOG.debug(
                 "Discarded incident %s by AREA prefix: AREA=%s allowed=%s",
                 incident.number,
@@ -297,16 +321,10 @@ def parse_incidents(html: str) -> list[Any]:
                 ",".join(configured_area_prefixes()),
             )
             continue
-        if not type_matches(incident.incident_type):
-            detail.LOG.debug(
-                "Discarded incident %s by TYPE fragment: TYPE=%s",
-                incident.number,
-                incident.incident_type,
-            )
-            continue
         selected.append(incident)
     detail.LOG.info(
-        "Fast prefilter retained %d of %d incidents using AREA prefixes=%s and TYPE fragments=%s",
+        "Fast prefilter retained %d of %d incidents using AREA prefixes=%s; "
+        "tracking all retained Types for possible upgrades; alert Type fragments=%s",
         len(selected),
         len(incidents),
         ",".join(configured_area_prefixes()),
@@ -328,15 +346,33 @@ def match_incident(incident: Any, **kwargs: Any) -> Any:
 
     codes = detail.detail_codes(incident.details)
     alert_codes = sorted(codes & detail.ALERT_CODES)
+    type_hits = matched_type_fragments(incident.incident_type)
+    type_allowed = bool(type_hits)
+    result = core.coordinate_match(coordinates)
+    location_reason = f"CHP detail Lat/Lon; {result.reason}"
+
+    if not alert_codes and not type_allowed:
+        if codes & detail.LOG_ONLY_CODES:
+            trigger = "11-82 detail code logged only"
+        else:
+            trigger = f"tracked non-alertable type: {incident.incident_type or 'blank'}"
+        return core.MatchResult(
+            False,
+            f"{trigger}; {location_reason}",
+            "low",
+            result.latitude,
+            result.longitude,
+            result.distance_km,
+        )
+
     trigger = (
         f"detail code {', '.join(alert_codes)}"
         if alert_codes
-        else f"type fragment match: {incident.incident_type}"
+        else f"type fragment match {', '.join(type_hits)}: {incident.incident_type}"
     )
-    result = core.coordinate_match(coordinates)
     return core.MatchResult(
         result.relevant,
-        f"{trigger}; CHP detail Lat/Lon; {result.reason}",
+        f"{trigger}; {location_reason}",
         "high",
         result.latitude,
         result.longitude,
