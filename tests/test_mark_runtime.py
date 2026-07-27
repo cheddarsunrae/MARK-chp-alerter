@@ -5,6 +5,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import address_box_runtime
 import chp_jamul_alert as core
 import mark_backend
 from geometry_utils import remove_shorter_path_between, simplify_closed_polygon
@@ -196,6 +197,37 @@ class BoundaryBufferTests(unittest.TestCase):
         self.assertIn("outside active service-area polygon", result.reason)
         self.assertIn("within boundary buffer", result.reason)
         self.assertGreater(result.distance_km or 0, 0)
+
+
+class AddressBoxTests(unittest.TestCase):
+    def test_builds_closed_square_geojson_around_address(self) -> None:
+        payload = address_box_runtime.build_address_box_geojson(
+            address="1600 Pacific Hwy, San Diego, CA",
+            latitude=32.7157,
+            longitude=-117.1611,
+            half_size_meters=1000,
+            display_name="San Diego County Administration Center",
+        )
+        feature = payload["features"][0]
+        ring = feature["geometry"]["coordinates"][0]
+        self.assertEqual(payload["type"], "FeatureCollection")
+        self.assertEqual(feature["geometry"]["type"], "Polygon")
+        self.assertEqual(len(ring), 5)
+        self.assertEqual(ring[0], ring[-1])
+        self.assertAlmostEqual(feature["properties"]["half_size_meters"], 1000.0)
+        self.assertAlmostEqual(feature["properties"]["box_width_meters"], 2000.0)
+        west, south = ring[0]
+        east, north = ring[2]
+        self.assertLess(west, -117.1611)
+        self.assertGreater(east, -117.1611)
+        self.assertLess(south, 32.7157)
+        self.assertGreater(north, 32.7157)
+
+    def test_rejects_unreasonable_box_half_sizes(self) -> None:
+        with self.assertRaises(address_box_runtime.AddressBoxError):
+            address_box_runtime.parse_half_size_meters("10")
+        with self.assertRaises(address_box_runtime.AddressBoxError):
+            address_box_runtime.parse_half_size_meters("150000")
 
 
 class GeometryTests(unittest.TestCase):
