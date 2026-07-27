@@ -92,6 +92,7 @@ class RegionMarkApp(mark_update_entry.UpdatingMarkApp):
                 "CHP_ALERT_COMM_CENTER": DEFAULT_CENTER_CODE,
                 "CHP_ALERT_COMM_CENTER_NAME": DEFAULT_CENTER_NAME,
                 "CHP_ALERT_COMM_CENTER_DISPLAY": f"{DEFAULT_CENTER_NAME} ({DEFAULT_CENTER_CODE})",
+                "CHP_ALERT_BOUNDARY_BUFFER_METERS": "0",
             }
         )
         return values
@@ -104,6 +105,7 @@ class RegionMarkApp(mark_update_entry.UpdatingMarkApp):
             "CHP_ALERT_COMM_CENTER_DISPLAY",
             "CHP_ALERT_SERVICE_AREA_FILE",
             "CHP_ALERT_SERVICE_AREA_LABEL",
+            "CHP_ALERT_BOUNDARY_BUFFER_METERS",
             "CHP_ALERT_AREA_PREFIXES",
             "CHP_ALERT_TYPE_FRAGMENTS",
         ):
@@ -237,6 +239,20 @@ class RegionMarkApp(mark_update_entry.UpdatingMarkApp):
         )
         ttk.Button(row2, text="Browse", command=self.browse_service_area_map).pack(side="left")
 
+        row_buffer = ttk.Frame(panel)
+        row_buffer.pack(fill="x", pady=(7, 0))
+        ttk.Label(row_buffer, text="Boundary buffer metres").pack(side="left")
+        ttk.Entry(
+            row_buffer,
+            textvariable=self.vars["CHP_ALERT_BOUNDARY_BUFFER_METERS"],
+            width=10,
+        ).pack(side="left", padx=(8, 4))
+        ttk.Label(
+            row_buffer,
+            text="0 = strict inside only; use a positive value to alert near-boundary calls.",
+            wraplength=300,
+        ).pack(side="left", padx=(6, 0))
+
         row3 = ttk.Frame(panel)
         row3.pack(fill="x", pady=(7, 0))
         ttk.Button(row3, text="Load Center Test Map", command=self.load_center_smoke_test_map).pack(side="left")
@@ -269,7 +285,14 @@ class RegionMarkApp(mark_update_entry.UpdatingMarkApp):
             map_file = self.vars["CHP_ALERT_SERVICE_AREA_FILE"].get() or "not selected"
             area = self.vars["CHP_ALERT_AREA_PREFIXES"].get() or "default"
             types = self.vars["CHP_ALERT_TYPE_FRAGMENTS"].get() or "default"
-            return f"Center: {center['name']} ({center['code']}) • Map: {Path(map_file).name} • AREA: {area} • Type: {types}"
+            buffer_metres = self.vars.get(
+                "CHP_ALERT_BOUNDARY_BUFFER_METERS",
+                tk.StringVar(value="0"),
+            ).get() or "0"
+            return (
+                f"Center: {center['name']} ({center['code']}) • Map: {Path(map_file).name} • "
+                f"AREA: {area} • Type: {types} • Buffer: {buffer_metres} m"
+            )
         except Exception:
             return "Center/map not configured"
 
@@ -346,6 +369,7 @@ class RegionMarkApp(mark_update_entry.UpdatingMarkApp):
             path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
             self.vars["CHP_ALERT_SERVICE_AREA_FILE"].set(str(path))
             self.vars["CHP_ALERT_SERVICE_AREA_LABEL"].set(f"{center['name']} CHP center smoke-test boundary")
+            self.vars["CHP_ALERT_BOUNDARY_BUFFER_METERS"].set("0")
             self.vars["CHP_ALERT_AREA_PREFIXES"].set("*")
             self.vars["CHP_ALERT_TYPE_FRAGMENTS"].set("*")
             self.map_path = path
@@ -366,6 +390,14 @@ class RegionMarkApp(mark_update_entry.UpdatingMarkApp):
         values["CHP_ALERT_SERVICE_AREA_FILE"] = values.get("CHP_ALERT_SERVICE_AREA_FILE", "").strip()
         if not values["CHP_ALERT_SERVICE_AREA_FILE"]:
             raise ValueError("Select a service-area GeoJSON map.")
+        raw_buffer = values.get("CHP_ALERT_BOUNDARY_BUFFER_METERS", "0").strip() or "0"
+        try:
+            buffer_value = float(raw_buffer)
+        except ValueError as exc:
+            raise ValueError("Boundary buffer metres must be a number, for example 0 or 12000.") from exc
+        if buffer_value < 0:
+            raise ValueError("Boundary buffer metres cannot be negative.")
+        values["CHP_ALERT_BOUNDARY_BUFFER_METERS"] = str(int(buffer_value)) if buffer_value.is_integer() else str(buffer_value)
         return values
 
     def save_configuration(self, quiet: bool = False) -> bool:
@@ -381,6 +413,8 @@ class RegionMarkApp(mark_update_entry.UpdatingMarkApp):
             handle.write("\n# CHP communications center\n")
             handle.write(f"CHP_ALERT_COMM_CENTER={values.get('CHP_ALERT_COMM_CENTER', DEFAULT_CENTER_CODE)}\n")
             handle.write(f"CHP_ALERT_COMM_CENTER_NAME={values.get('CHP_ALERT_COMM_CENTER_NAME', DEFAULT_CENTER_NAME)}\n")
+            handle.write("\n# Boundary buffer / near-boundary alerts\n")
+            handle.write(f"CHP_ALERT_BOUNDARY_BUFFER_METERS={values.get('CHP_ALERT_BOUNDARY_BUFFER_METERS', '0')}\n")
 
 
 def main() -> int:
