@@ -10,6 +10,7 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
+import address_box_runtime
 import mark_app
 import mark_gui_entry
 import mark_update_entry
@@ -93,6 +94,8 @@ class RegionMarkApp(mark_update_entry.UpdatingMarkApp):
                 "CHP_ALERT_COMM_CENTER_NAME": DEFAULT_CENTER_NAME,
                 "CHP_ALERT_COMM_CENTER_DISPLAY": f"{DEFAULT_CENTER_NAME} ({DEFAULT_CENTER_CODE})",
                 "CHP_ALERT_BOUNDARY_BUFFER_METERS": "0",
+                "CHP_ALERT_ADDRESS_BOX_ADDRESS": "",
+                "CHP_ALERT_ADDRESS_BOX_HALF_SIZE_METERS": str(int(address_box_runtime.DEFAULT_HALF_SIZE_METERS)),
             }
         )
         return values
@@ -106,6 +109,8 @@ class RegionMarkApp(mark_update_entry.UpdatingMarkApp):
             "CHP_ALERT_SERVICE_AREA_FILE",
             "CHP_ALERT_SERVICE_AREA_LABEL",
             "CHP_ALERT_BOUNDARY_BUFFER_METERS",
+            "CHP_ALERT_ADDRESS_BOX_ADDRESS",
+            "CHP_ALERT_ADDRESS_BOX_HALF_SIZE_METERS",
             "CHP_ALERT_AREA_PREFIXES",
             "CHP_ALERT_TYPE_FRAGMENTS",
         ):
@@ -253,6 +258,37 @@ class RegionMarkApp(mark_update_entry.UpdatingMarkApp):
             wraplength=300,
         ).pack(side="left", padx=(6, 0))
 
+        address_box = ttk.LabelFrame(panel, text="Address Box Map", padding=8)
+        address_box.pack(fill="x", pady=(9, 0))
+        ttk.Label(
+            address_box,
+            text="Generate a square service-area map centered on one address. Review the map visually before operational use.",
+            wraplength=360,
+        ).pack(anchor="w", fill="x")
+
+        row_address = ttk.Frame(address_box)
+        row_address.pack(fill="x", pady=(7, 0))
+        ttk.Label(row_address, text="Address").pack(side="left")
+        ttk.Entry(
+            row_address,
+            textvariable=self.vars["CHP_ALERT_ADDRESS_BOX_ADDRESS"],
+        ).pack(side="left", fill="x", expand=True, padx=(8, 0))
+
+        row_size = ttk.Frame(address_box)
+        row_size.pack(fill="x", pady=(7, 0))
+        ttk.Label(row_size, text="Box half-size metres").pack(side="left")
+        ttk.Entry(
+            row_size,
+            textvariable=self.vars["CHP_ALERT_ADDRESS_BOX_HALF_SIZE_METERS"],
+            width=10,
+        ).pack(side="left", padx=(8, 4))
+        ttk.Button(row_size, text="Build Address Box Map", command=self.build_address_box_map).pack(side="left", padx=(6, 0))
+        ttk.Label(
+            row_size,
+            text="Example: 3000 creates a box about 6 km wide by 6 km tall.",
+            wraplength=250,
+        ).pack(side="left", padx=(8, 0))
+
         row3 = ttk.Frame(panel)
         row3.pack(fill="x", pady=(7, 0))
         ttk.Button(row3, text="Load Center Test Map", command=self.load_center_smoke_test_map).pack(side="left")
@@ -380,6 +416,57 @@ class RegionMarkApp(mark_update_entry.UpdatingMarkApp):
         except Exception as exc:
             messagebox.showerror("Could not load test map", str(exc), parent=self)
 
+    def build_address_box_map(self) -> None:
+        address = self.vars["CHP_ALERT_ADDRESS_BOX_ADDRESS"].get().strip()
+        raw_half_size = self.vars["CHP_ALERT_ADDRESS_BOX_HALF_SIZE_METERS"].get().strip()
+        try:
+            half_size = address_box_runtime.parse_half_size_meters(raw_half_size)
+        except address_box_runtime.AddressBoxError as exc:
+            messagebox.showerror("Address box map", str(exc), parent=self)
+            return
+        if not address:
+            messagebox.showerror("Address box map", "Enter an address before building an address box map.", parent=self)
+            return
+        width_km = (half_size * 2.0) / 1000.0
+        if not messagebox.askyesno(
+            "Build address box map?",
+            f"MARK will geocode this address once and create a square map about {width_km:.2f} km wide by {width_km:.2f} km tall.\n\n"
+            "Review the generated map visually before operational use. Continue?",
+            parent=self,
+        ):
+            return
+        try:
+            latitude, longitude, display_name = address_box_runtime.geocode_address(
+                address,
+                user_agent=f"MARK-chp-alerter/{self.app_version}",
+            )
+            payload = address_box_runtime.build_address_box_geojson(
+                address=address,
+                latitude=latitude,
+                longitude=longitude,
+                half_size_meters=half_size,
+                display_name=display_name,
+            )
+            path = address_box_runtime.generated_address_box_path(ROOT, address)
+            address_box_runtime.write_address_box_geojson(path, payload)
+            self.vars["CHP_ALERT_SERVICE_AREA_FILE"].set(str(path))
+            self.vars["CHP_ALERT_SERVICE_AREA_LABEL"].set(f"Address box: {address}")
+            self.vars["CHP_ALERT_BOUNDARY_BUFFER_METERS"].set("0")
+            self.map_path = path
+            self.reload_map(prompt=False)
+            self.save_configuration(quiet=True)
+            self._refresh_region_summary()
+            self.append_log(
+                f"Generated address box map: {path} centered at {latitude:.6f}, {longitude:.6f}"
+            )
+            messagebox.showinfo(
+                "Address box map loaded",
+                f"Generated and loaded:\n{path}\n\nCenter:\n{display_name}",
+                parent=self,
+            )
+        except Exception as exc:
+            messagebox.showerror("Could not build address box map", str(exc), parent=self)
+
     def collect_configuration(self) -> dict[str, str]:
         self._ensure_region_vars()
         self._center_selection_changed()
@@ -398,6 +485,17 @@ class RegionMarkApp(mark_update_entry.UpdatingMarkApp):
         if buffer_value < 0:
             raise ValueError("Boundary buffer metres cannot be negative.")
         values["CHP_ALERT_BOUNDARY_BUFFER_METERS"] = str(int(buffer_value)) if buffer_value.is_integer() else str(buffer_value)
+        address = values.get("CHP_ALERT_ADDRESS_BOX_ADDRESS", "").strip()
+        half_size = values.get("CHP_ALERT_ADDRESS_BOX_HALF_SIZE_METERS", "").strip()
+        if half_size:
+            try:
+                parsed_half_size = address_box_runtime.parse_half_size_meters(half_size)
+            except address_box_runtime.AddressBoxError as exc:
+                raise ValueError(str(exc)) from exc
+            values["CHP_ALERT_ADDRESS_BOX_HALF_SIZE_METERS"] = (
+                str(int(parsed_half_size)) if parsed_half_size.is_integer() else str(parsed_half_size)
+            )
+        values["CHP_ALERT_ADDRESS_BOX_ADDRESS"] = address
         return values
 
     def save_configuration(self, quiet: bool = False) -> bool:
@@ -415,6 +513,11 @@ class RegionMarkApp(mark_update_entry.UpdatingMarkApp):
             handle.write(f"CHP_ALERT_COMM_CENTER_NAME={values.get('CHP_ALERT_COMM_CENTER_NAME', DEFAULT_CENTER_NAME)}\n")
             handle.write("\n# Boundary buffer / near-boundary alerts\n")
             handle.write(f"CHP_ALERT_BOUNDARY_BUFFER_METERS={values.get('CHP_ALERT_BOUNDARY_BUFFER_METERS', '0')}\n")
+            handle.write("\n# Address box map helper\n")
+            handle.write(f"CHP_ALERT_ADDRESS_BOX_ADDRESS={values.get('CHP_ALERT_ADDRESS_BOX_ADDRESS', '')}\n")
+            handle.write(
+                f"CHP_ALERT_ADDRESS_BOX_HALF_SIZE_METERS={values.get('CHP_ALERT_ADDRESS_BOX_HALF_SIZE_METERS', str(int(address_box_runtime.DEFAULT_HALF_SIZE_METERS)))}\n"
+            )
 
 
 def main() -> int:
