@@ -1,5 +1,21 @@
 # MARK release notes
 
+## 0.9.0-beta.7
+
+Service-area map import/reload UX update.
+
+### Added
+
+- `mark_region_reload_entry.py`, a GUI entry point that wraps the Region panel with explicit map import/reload controls.
+- **Import Existing Map** button for selecting an existing GeoJSON service-area map.
+- **Reload Last Saved Map** button for reopening the map currently saved in `.env` as `CHP_ALERT_SERVICE_AREA_FILE`.
+
+### Behavior
+
+- The normal Windows, macOS, and Linux launchers now open the map-reload Region GUI entry point.
+- On startup, MARK attempts to reload the last saved service-area map automatically so users do not have to re-import the same map each session.
+- Importing an existing map saves it through the Region/Map save flow, clears stale dedupe state, and prompts for monitor restart when needed.
+
 ## 0.9.0-beta.6
 
 Region/map restart and Traffic Hazard hardening update.
