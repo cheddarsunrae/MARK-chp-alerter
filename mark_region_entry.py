@@ -23,25 +23,34 @@ QUICK_START_GUIDE = ROOT / "MARK_QUICK_START_GUIDE.md"
 FIRST_RUN_FLAG = ROOT / "runtime" / "first-run-helper-dismissed"
 DEFAULT_CENTER_CODE = "BCCC"
 DEFAULT_CENTER_NAME = "Border"
-DEFAULT_AREA_PREFIXES = "BC,El"
+DEFAULT_AREA_PREFIXES = "Bo,El"
 DEFAULT_TYPE_FRAGMENTS = "Unk,1140,1141,Min,Maj,1179,1180,1178,un w,Repo"
 
-AREA_PRESETS: tuple[tuple[str, str], ...] = (
-    ("Border + El Cajon", "BC,El"),
+# Some CHP centers cover a broad region/county AREA value that should always be
+# included with any user-selected subareas. Border Communications Center is the
+# San Diego County example: keep Bo/Border in scope even when the user also
+# selects San Diego, El Cajon, etc.
+CENTER_REQUIRED_AREA_PREFIXES: dict[str, tuple[str, ...]] = {
+    "BCCC": ("Bo",),
+}
+
+AREA_OPTIONS: tuple[tuple[str, str], ...] = (
+    ("Border / San Diego County region", "Bo"),
     ("San Diego", "Sa"),
     ("El Cajon", "El"),
-    ("Border", "BC"),
-    ("San Diego + El Cajon", "Sa,El"),
-    ("All CHP Areas / smoke test", "*"),
-    ("Custom", ""),
+    ("Oceanside", "Oc"),
+    ("Temecula", "Te"),
 )
 AREA_NAME_ALIASES = {
     "all": "*",
     "any": "*",
     "*": "*",
-    "border": "BC",
-    "bc": "BC",
-    "bccc": "BC",
+    "border": "Bo",
+    "bo": "Bo",
+    "bc": "Bo",  # migration compatibility for older beta configs
+    "bccc": "Bo",
+    "san diego county": "Bo",
+    "county": "Bo",
     "el cajon": "El",
     "el": "El",
     "san diego": "Sa",
@@ -62,35 +71,42 @@ def _split_list(value: str) -> list[str]:
     return [item.strip() for item in re.split(r"[,;\n]+", value or "") if item.strip()]
 
 
-def normalize_area_prefixes(value: str) -> str:
-    """Return a stable comma-separated AREA prefix list for .env storage."""
+def required_area_prefixes_for_center(center_code: str) -> tuple[str, ...]:
+    """Return AREA prefixes that should always be included for a CHP center."""
+    return CENTER_REQUIRED_AREA_PREFIXES.get((center_code or "").strip().upper(), ())
+
+
+def normalize_area_token(value: str) -> str:
+    """Normalize a user-entered AREA token or alias to CHP's two-character prefix."""
+    folded = value.strip().casefold()
+    alias = AREA_NAME_ALIASES.get(folded)
+    if alias:
+        return alias
+    if len(value.strip()) == 2:
+        stripped = value.strip()
+        return stripped[0].upper() + stripped[1].lower()
+    return value.strip()
+
+
+def normalize_area_prefixes(value: str, required: tuple[str, ...] = ()) -> str:
+    """Return stable comma-separated AREA prefixes for .env storage."""
     items = _split_list(value)
-    if not items:
-        raise ValueError("Choose at least one CHP AREA prefix, such as Sa, El, BC, or *.")
+    if not items and not required:
+        raise ValueError("Choose at least one CHP AREA prefix, such as Sa, El, Bo, or *.")
     normalized: list[str] = []
     for item in items:
-        folded = item.casefold()
-        alias = AREA_NAME_ALIASES.get(folded)
-        if alias == "*":
+        value_out = normalize_area_token(item)
+        if value_out == "*":
             return "*"
-        value_out = alias or item.strip()
-        if len(value_out) == 2:
-            value_out = value_out[0].upper() + value_out[1].lower()
-        if value_out not in normalized:
+        if value_out and value_out not in normalized:
             normalized.append(value_out)
+    for item in required:
+        value_out = normalize_area_token(item)
+        if value_out == "*":
+            return "*"
+        if value_out and value_out not in normalized:
+            normalized.insert(0, value_out)
     return ",".join(normalized)
-
-
-def area_preset_for_prefixes(value: str) -> str:
-    """Return the preset label matching the current area prefix text, or Custom."""
-    try:
-        normalized = normalize_area_prefixes(value)
-    except ValueError:
-        return "Custom"
-    for label, prefixes in AREA_PRESETS:
-        if prefixes and normalize_area_prefixes(prefixes) == normalized:
-            return label
-    return "Custom"
 
 
 def read_version() -> str:
@@ -145,6 +161,8 @@ class RegionMarkApp(mark_update_entry.UpdatingMarkApp):
     def __init__(self) -> None:
         self.app_version = read_version()
         self.region_status_text: tk.StringVar | None = None
+        self.area_required_text: tk.StringVar | None = None
+        self.area_prefix_checks: dict[str, tk.BooleanVar] = {}
         self.center_options = load_centers()
         super().__init__()
         self.title(f"{mark_app.APP_TITLE} v{self.app_version}")
@@ -157,7 +175,6 @@ class RegionMarkApp(mark_update_entry.UpdatingMarkApp):
                 "CHP_ALERT_COMM_CENTER": DEFAULT_CENTER_CODE,
                 "CHP_ALERT_COMM_CENTER_NAME": DEFAULT_CENTER_NAME,
                 "CHP_ALERT_COMM_CENTER_DISPLAY": f"{DEFAULT_CENTER_NAME} ({DEFAULT_CENTER_CODE})",
-                "CHP_ALERT_AREA_PRESET": "Border + El Cajon",
                 "CHP_ALERT_AREA_PREFIXES": DEFAULT_AREA_PREFIXES,
                 "CHP_ALERT_TYPE_FRAGMENTS": DEFAULT_TYPE_FRAGMENTS,
                 "CHP_ALERT_BOUNDARY_BUFFER_METERS": "0",
@@ -173,7 +190,6 @@ class RegionMarkApp(mark_update_entry.UpdatingMarkApp):
             "CHP_ALERT_COMM_CENTER",
             "CHP_ALERT_COMM_CENTER_NAME",
             "CHP_ALERT_COMM_CENTER_DISPLAY",
-            "CHP_ALERT_AREA_PRESET",
             "CHP_ALERT_SERVICE_AREA_FILE",
             "CHP_ALERT_SERVICE_AREA_LABEL",
             "CHP_ALERT_BOUNDARY_BUFFER_METERS",
@@ -233,7 +249,7 @@ class RegionMarkApp(mark_update_entry.UpdatingMarkApp):
         steps.pack(fill="x", pady=(14, 0))
         for text in (
             "1. Pick the CHP communications center for the station, address, or agency.",
-            "2. Choose the CHP AREA prefix preset that matches your map footprint.",
+            "2. Select every CHP AREA prefix that overlaps the active map.",
             "3. Load a broad smoke-test map or build an address box map.",
             "4. Configure and test notifications.",
             "5. Replace test maps before real operational use.",
@@ -251,7 +267,7 @@ class RegionMarkApp(mark_update_entry.UpdatingMarkApp):
         super().load_configuration()
         self._ensure_region_vars()
         self._sync_center_display_from_code()
-        self._sync_area_preset_from_prefixes()
+        self._sync_area_checkboxes_from_prefixes()
         self._refresh_region_summary()
 
     def _build_config(self, frame: ttk.Frame) -> None:
@@ -268,7 +284,7 @@ class RegionMarkApp(mark_update_entry.UpdatingMarkApp):
         else:
             panel.pack(fill="x", pady=(0, 10))
 
-        ttk.Label(panel, textvariable=self.region_status_text, wraplength=380).pack(anchor="w", fill="x")
+        ttk.Label(panel, textvariable=self.region_status_text, wraplength=390).pack(anchor="w", fill="x")
 
         row_center = ttk.Frame(panel)
         row_center.pack(fill="x", pady=(7, 0))
@@ -283,32 +299,43 @@ class RegionMarkApp(mark_update_entry.UpdatingMarkApp):
         ttk.Label(
             area_box,
             text=(
-                "Choose which CHP AREA rows MARK should fetch and track inside this center. "
-                "Type fragments stay fixed; AREA prefixes should match the active map."
+                "Select all CHP AREA rows MARK should fetch and track inside this center. "
+                "Required regional AREA prefixes are added automatically. Type fragments stay fixed."
             ),
-            wraplength=380,
+            wraplength=390,
         ).pack(anchor="w", fill="x")
-        row_area_preset = ttk.Frame(area_box)
-        row_area_preset.pack(fill="x", pady=(7, 0))
-        ttk.Label(row_area_preset, text="AREA preset").pack(side="left")
-        area_combo = ttk.Combobox(
-            row_area_preset,
-            textvariable=self.vars["CHP_ALERT_AREA_PRESET"],
-            values=[label for label, _prefixes in AREA_PRESETS],
-            state="readonly",
-        )
-        area_combo.pack(side="left", fill="x", expand=True, padx=(8, 0))
-        area_combo.bind("<<ComboboxSelected>>", lambda _event: self._area_preset_changed())
+        self.area_required_text = tk.StringVar(value=self._required_area_message())
+        ttk.Label(area_box, textvariable=self.area_required_text, wraplength=390).pack(anchor="w", fill="x", pady=(4, 0))
+
+        checklist = ttk.Frame(area_box)
+        checklist.pack(fill="x", pady=(7, 0))
+        for index, (label, prefix) in enumerate(AREA_OPTIONS):
+            var = tk.BooleanVar(value=False)
+            self.area_prefix_checks[prefix] = var
+            check = ttk.Checkbutton(
+                checklist,
+                text=f"{label} ({prefix})",
+                variable=var,
+                command=self._apply_area_checkbox_selection,
+            )
+            check.grid(row=index // 2, column=index % 2, sticky="w", padx=(0, 16), pady=2)
+        self.area_prefix_checks["*"] = tk.BooleanVar(value=False)
+        ttk.Checkbutton(
+            checklist,
+            text="All CHP Areas / smoke test (*)",
+            variable=self.area_prefix_checks["*"],
+            command=self._apply_area_checkbox_selection,
+        ).grid(row=3, column=0, columnspan=2, sticky="w", pady=(4, 0))
 
         row_area_value = ttk.Frame(area_box)
         row_area_value.pack(fill="x", pady=(7, 0))
-        ttk.Label(row_area_value, text="AREA prefixes").pack(side="left")
+        ttk.Label(row_area_value, text="Saved AREA prefixes").pack(side="left")
         ttk.Entry(row_area_value, textvariable=self.vars["CHP_ALERT_AREA_PREFIXES"]).pack(side="left", fill="x", expand=True, padx=(8, 4))
-        ttk.Button(row_area_value, text="Apply Preset", command=self._area_preset_changed).pack(side="left")
+        ttk.Button(row_area_value, text="Apply Manual", command=self._manual_area_prefixes_changed).pack(side="left")
         ttk.Label(
             area_box,
-            text="Examples: Sa for San Diego, El for El Cajon, BC for Border, Sa,El for both, or * for smoke testing.",
-            wraplength=380,
+            text="Examples: Sa for San Diego, El for El Cajon, Bo for Border/San Diego County region, or * for smoke testing.",
+            wraplength=390,
         ).pack(anchor="w", pady=(6, 0))
 
         row_map = ttk.Frame(panel)
@@ -325,7 +352,7 @@ class RegionMarkApp(mark_update_entry.UpdatingMarkApp):
 
         address_box = ttk.LabelFrame(panel, text="Address Box Map", padding=8)
         address_box.pack(fill="x", pady=(9, 0))
-        ttk.Label(address_box, text="Generate a square service-area map centered on one address. Review the map visually before operational use.", wraplength=380).pack(anchor="w", fill="x")
+        ttk.Label(address_box, text="Generate a square service-area map centered on one address. Review the map visually before operational use.", wraplength=390).pack(anchor="w", fill="x")
         row_address = ttk.Frame(address_box)
         row_address.pack(fill="x", pady=(7, 0))
         ttk.Label(row_address, text="Address").pack(side="left")
@@ -343,6 +370,20 @@ class RegionMarkApp(mark_update_entry.UpdatingMarkApp):
         ttk.Button(row_actions, text="Save Region/Map", command=self.save_configuration).pack(side="left", padx=(6, 0))
         ttk.Label(row_actions, text="Test maps use AREA=* so all listed AREA rows can validate the path; Type fragments stay fixed.", wraplength=330).pack(side="left", padx=(8, 0))
 
+        self._sync_area_checkboxes_from_prefixes()
+
+    def _selected_center(self) -> dict[str, str]:
+        return label_to_center(self.vars["CHP_ALERT_COMM_CENTER_DISPLAY"].get(), self.center_options)
+
+    def _required_area_prefixes(self) -> tuple[str, ...]:
+        return required_area_prefixes_for_center(self.vars.get("CHP_ALERT_COMM_CENTER", tk.StringVar(value=DEFAULT_CENTER_CODE)).get())
+
+    def _required_area_message(self) -> str:
+        required = self._required_area_prefixes()
+        if required:
+            return "Always included for this CHP center: " + ",".join(required)
+        return "No required regional AREA prefix for this CHP center."
+
     def _sync_center_display_from_code(self) -> None:
         code = self.vars.get("CHP_ALERT_COMM_CENTER", tk.StringVar(value=DEFAULT_CENTER_CODE)).get().strip().upper()
         name = self.vars.get("CHP_ALERT_COMM_CENTER_NAME", tk.StringVar(value="")).get().strip()
@@ -353,21 +394,46 @@ class RegionMarkApp(mark_update_entry.UpdatingMarkApp):
             center = {"code": center["code"], "name": name}
         self.vars["CHP_ALERT_COMM_CENTER_DISPLAY"].set(center_label(center))
 
-    def _sync_area_preset_from_prefixes(self) -> None:
-        current = self.vars.get("CHP_ALERT_AREA_PREFIXES", tk.StringVar(value=DEFAULT_AREA_PREFIXES)).get()
-        self.vars["CHP_ALERT_AREA_PRESET"].set(area_preset_for_prefixes(current))
+    def _sync_area_checkboxes_from_prefixes(self) -> None:
+        if not self.area_prefix_checks:
+            return
+        required = self._required_area_prefixes()
+        normalized = normalize_area_prefixes(self.vars["CHP_ALERT_AREA_PREFIXES"].get() or DEFAULT_AREA_PREFIXES, required)
+        self.vars["CHP_ALERT_AREA_PREFIXES"].set(normalized)
+        star = normalized == "*"
+        selected = set(_split_list(normalized))
+        for prefix, var in self.area_prefix_checks.items():
+            var.set(star if prefix == "*" else prefix in selected)
+        if self.area_required_text is not None:
+            self.area_required_text.set(self._required_area_message())
 
-    def _area_preset_changed(self) -> None:
-        label = self.vars["CHP_ALERT_AREA_PRESET"].get()
-        prefixes = next((value for preset, value in AREA_PRESETS if preset == label), "")
-        if prefixes:
-            self.vars["CHP_ALERT_AREA_PREFIXES"].set(prefixes)
+    def _apply_area_checkbox_selection(self) -> None:
+        if self.area_prefix_checks.get("*") and self.area_prefix_checks["*"].get():
+            self.vars["CHP_ALERT_AREA_PREFIXES"].set("*")
+            self._sync_area_checkboxes_from_prefixes()
+            self._refresh_region_summary()
+            return
+        selected = [prefix for _label, prefix in AREA_OPTIONS if self.area_prefix_checks.get(prefix) and self.area_prefix_checks[prefix].get()]
+        normalized = normalize_area_prefixes(",".join(selected), self._required_area_prefixes())
+        self.vars["CHP_ALERT_AREA_PREFIXES"].set(normalized)
+        self._sync_area_checkboxes_from_prefixes()
+        self._refresh_region_summary()
+
+    def _manual_area_prefixes_changed(self) -> None:
+        try:
+            normalized = normalize_area_prefixes(self.vars["CHP_ALERT_AREA_PREFIXES"].get(), self._required_area_prefixes())
+        except ValueError as exc:
+            messagebox.showerror("CHP AREA prefixes", str(exc), parent=self)
+            return
+        self.vars["CHP_ALERT_AREA_PREFIXES"].set(normalized)
+        self._sync_area_checkboxes_from_prefixes()
         self._refresh_region_summary()
 
     def _center_selection_changed(self) -> None:
-        center = label_to_center(self.vars["CHP_ALERT_COMM_CENTER_DISPLAY"].get(), self.center_options)
+        center = self._selected_center()
         self.vars["CHP_ALERT_COMM_CENTER"].set(center["code"])
         self.vars["CHP_ALERT_COMM_CENTER_NAME"].set(center["name"])
+        self._sync_area_checkboxes_from_prefixes()
         self._refresh_region_summary()
 
     def _region_summary(self) -> str:
@@ -423,7 +489,7 @@ class RegionMarkApp(mark_update_entry.UpdatingMarkApp):
 
     def load_center_smoke_test_map(self) -> None:
         self._center_selection_changed()
-        center = label_to_center(self.vars["CHP_ALERT_COMM_CENTER_DISPLAY"].get(), self.center_options)
+        center = self._selected_center()
         if not messagebox.askyesno(
             "Load broad test map?",
             "This will load a broad smoke-test map for the selected CHP center and set AREA=* so all listed AREA rows can test the pipeline.\n\n"
@@ -441,8 +507,8 @@ class RegionMarkApp(mark_update_entry.UpdatingMarkApp):
             self.vars["CHP_ALERT_SERVICE_AREA_LABEL"].set(f"{center['name']} CHP center smoke-test boundary")
             self.vars["CHP_ALERT_BOUNDARY_BUFFER_METERS"].set("0")
             self.vars["CHP_ALERT_AREA_PREFIXES"].set("*")
-            self.vars["CHP_ALERT_AREA_PRESET"].set("All CHP Areas / smoke test")
             self.vars["CHP_ALERT_TYPE_FRAGMENTS"].set(self.vars["CHP_ALERT_TYPE_FRAGMENTS"].get() or DEFAULT_TYPE_FRAGMENTS)
+            self._sync_area_checkboxes_from_prefixes()
             self.map_path = path
             self.reload_map(prompt=False)
             self.save_configuration(quiet=True)
@@ -466,7 +532,7 @@ class RegionMarkApp(mark_update_entry.UpdatingMarkApp):
         if not messagebox.askyesno(
             "Build address box map?",
             f"MARK will geocode this address once and create a square map about {width_km:.2f} km wide by {width_km:.2f} km tall.\n\n"
-            "Review the generated map visually and confirm the CHP AREA prefix preset before operational use. Continue?",
+            "Review the generated map visually and confirm the CHP AREA selections before operational use. Continue?",
             parent=self,
         ):
             return
@@ -484,6 +550,7 @@ class RegionMarkApp(mark_update_entry.UpdatingMarkApp):
             self.vars["CHP_ALERT_SERVICE_AREA_FILE"].set(str(path))
             self.vars["CHP_ALERT_SERVICE_AREA_LABEL"].set(f"Address box: {address}")
             self.vars["CHP_ALERT_BOUNDARY_BUFFER_METERS"].set("0")
+            self._sync_area_checkboxes_from_prefixes()
             self.map_path = path
             self.reload_map(prompt=False)
             self.save_configuration(quiet=True)
@@ -491,7 +558,7 @@ class RegionMarkApp(mark_update_entry.UpdatingMarkApp):
             self.append_log(f"Generated address box map: {path} centered at {latitude:.6f}, {longitude:.6f}")
             messagebox.showinfo(
                 "Address box map loaded",
-                f"Generated and loaded:\n{path}\n\nCenter:\n{display_name}\n\nConfirm the CHP AREA preset before starting the monitor.",
+                f"Generated and loaded:\n{path}\n\nCenter:\n{display_name}\n\nConfirm the CHP AREA selections before starting the monitor.",
                 parent=self,
             )
         except Exception as exc:
@@ -507,10 +574,11 @@ class RegionMarkApp(mark_update_entry.UpdatingMarkApp):
         values["CHP_ALERT_SERVICE_AREA_FILE"] = values.get("CHP_ALERT_SERVICE_AREA_FILE", "").strip()
         if not values["CHP_ALERT_SERVICE_AREA_FILE"]:
             raise ValueError("Select a service-area GeoJSON map.")
-        values["CHP_ALERT_AREA_PREFIXES"] = normalize_area_prefixes(values.get("CHP_ALERT_AREA_PREFIXES", DEFAULT_AREA_PREFIXES))
+        required = required_area_prefixes_for_center(center["code"])
+        values["CHP_ALERT_AREA_PREFIXES"] = normalize_area_prefixes(values.get("CHP_ALERT_AREA_PREFIXES", DEFAULT_AREA_PREFIXES), required)
         values["CHP_ALERT_TYPE_FRAGMENTS"] = values.get("CHP_ALERT_TYPE_FRAGMENTS", "").strip() or DEFAULT_TYPE_FRAGMENTS
         self.vars["CHP_ALERT_AREA_PREFIXES"].set(values["CHP_ALERT_AREA_PREFIXES"])
-        self._sync_area_preset_from_prefixes()
+        self._sync_area_checkboxes_from_prefixes()
 
         raw_buffer = values.get("CHP_ALERT_BOUNDARY_BUFFER_METERS", "0").strip() or "0"
         try:
@@ -536,7 +604,7 @@ class RegionMarkApp(mark_update_entry.UpdatingMarkApp):
         ok = super().save_configuration(quiet=quiet)
         if ok:
             self._sync_center_display_from_code()
-            self._sync_area_preset_from_prefixes()
+            self._sync_area_checkboxes_from_prefixes()
             self._refresh_region_summary()
         return ok
 
