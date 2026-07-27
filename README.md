@@ -4,6 +4,16 @@ MARK polls the public California Highway Patrol CAD page, performs a fast first-
 
 > **Supplemental awareness only.** MARK is not an official CAD terminal, station alerting system, pager, radio, or replacement for agency dispatch. Public webpages, networks, and third-party push services can fail or change.
 
+## Version
+
+The current beta version is stored in:
+
+```text
+VERSION
+```
+
+The GUI title displays the version when launched through the normal region-aware entry point.
+
 ## Platform support
 
 MARK uses one shared `main` branch for Windows, macOS, and Linux. Platform-specific branches are intentionally avoided because they would drift apart and make fixes harder to maintain.
@@ -25,9 +35,12 @@ The Windows version is live-accepted. Native macOS and Linux acceptance testing 
 
 ## User manuals
 
+- `RELEASE_README.md` — first file to read in a release ZIP.
 - `MARK_QUICK_START_GUIDE.md` — for users who do not know GitHub, PowerShell, Terminal, or Python.
 - `MARK_TECHNICAL_USER_GUIDE.md` — installation, configuration, providers, validation, and troubleshooting.
 - `USER_GUIDE.md` — earlier general operating guide retained for compatibility.
+- `docs/RELEASE_PACKAGING.md` — clean ZIP build process.
+- `docs/BETA_RELEASE_CHECKLIST.md` — acceptance checklist before sending a beta package to users.
 - `docs/STATEWIDE_NOTIFICATION_EXPANSION.md` — statewide and multi-provider architecture.
 - `data/chp_communications_centers.json` — CHP communications-center catalog.
 
@@ -37,9 +50,38 @@ Nontechnical operational users should receive a versioned ZIP or installer from 
 
 The Windows application launches and polls successfully. The final live defect was resolved by reproducing the complete browser form submission for CHP detail selection. The monitor now receives the selected incident panel instead of the incident listing again.
 
+## Release packaging
+
+Validate and build a clean beta release ZIP with:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\validate_release.py
+.\.venv\Scripts\python.exe .\scripts\build_release.py
+```
+
+The build writes:
+
+```text
+dist/MARK-<version>.zip
+dist/MARK-<version>.zip.sha256
+dist/MARK-<version>/release-manifest.json
+```
+
+The release builder excludes `.env`, `runtime/`, `.venv/`, `.git/`, logs, state files, and build outputs.
+
+## First-run helper
+
+The normal GUI entry point is:
+
+```text
+mark_region_entry.py
+```
+
+On first launch, the beta helper explains the recommended setup sequence, links to the Quick-Start guide, and offers shortcuts for notification settings and center smoke-test map loading. It stores its dismissed state under `runtime/`, which is intentionally not packaged.
+
 ## Update checking
 
-The update-aware GUI entry point is `mark_update_entry.py`. MARK checks the configured GitHub remote shortly after startup and also provides **Check for Updates** and **Install Update** controls.
+MARK checks the configured GitHub remote shortly after startup and also provides **Check for Updates** and **Install Update** controls.
 
 Automatic installation is intentionally conservative:
 
@@ -53,6 +95,32 @@ Automatic installation is intentionally conservative:
 - does not replace ignored operational files such as `.env`, profiles, private maps, logs, or runtime state.
 
 ZIP-only installations receive a clear manual-update message. A future signed release-package channel is still needed for fully automatic updates on non-Git installations.
+
+## CHP center and smoke-test maps
+
+The GUI exposes **CHP Region / Service-Area Map** at the top of the Configuration pane.
+
+It includes:
+
+- CHP communications-center selector
+- visible service-area map field
+- Browse button
+- **Load Center Test Map**
+- **Save Region/Map**
+
+Center smoke-test boundaries are generated from:
+
+```text
+data/chp_center_smoke_boundaries.json
+```
+
+Generated maps are written under:
+
+```text
+runtime/test_maps/
+```
+
+Smoke-test maps set `CHP_ALERT_AREA_PREFIXES=*` and `CHP_ALERT_TYPE_FRAGMENTS=*` so any listed incident in the selected center can validate the polling/detail/alert pipeline. They are intentionally broad and must not be used as operational service-area boundaries.
 
 ## Notification runtime and GUI controls
 
@@ -91,18 +159,6 @@ CHP_ALERT_SERVICE_AREA_LABEL=Jamul Fire Station 36
 
 Leave it blank for generic wording.
 
-## Smoke-test map
-
-A broad San Diego/Border-region test map is included at:
-
-```text
-test_maps/san_diego_region_smoke_test.geojson
-```
-
-This polygon is intentionally oversized so a qualifying CHP incident anywhere in the San Diego/Border operating region should exercise the full alert pipeline quickly. It is a **test-only** boundary. Do not use it as an operational station response area.
-
-To use it, stop the monitor, choose the file under **Service Area File**, save configuration, then start the monitor. Switch back to the real map before operational use.
-
 ## Map cleanup tools
 
 MARK has two cleanup modes:
@@ -118,7 +174,7 @@ MARK avoids fetching details for every CHP row.
 
 ### AREA-prefix allowlist
 
-Only the first two characters of the CHP `AREA` value are compared, case-insensitively.
+Only the first two characters of the CHP `AREA` value are compared, case-insensitively. `*` means all AREAs.
 
 Example Border-area profile:
 
@@ -131,6 +187,8 @@ CHP_ALERT_AREA_PREFIXES=BC,El
 ```dotenv
 CHP_ALERT_TYPE_FRAGMENTS=Unk,1140,1141,Min,Maj,1179,1180,1178,un w,Repo
 ```
+
+`*` means all Types.
 
 ### Browser-faithful detail retrieval
 
@@ -167,6 +225,7 @@ chmod +x install-mark-linux.sh
 
 ```powershell
 .\.venv\Scripts\python.exe -m py_compile `
+  .\mark_region_entry.py `
   .\mark_backend.py `
   .\notification_runtime.py `
   .\update_runtime.py `
@@ -185,13 +244,18 @@ chmod +x install-mark-linux.sh
 
 ## Important files
 
-- `mark_update_entry.py` — GUI update, notification-provider, and alert-policy controls
-- `update_runtime.py` — safe Git update discovery and fast-forward installation
-- `mark_gui_entry.py` — safe GUI entry, profiles, filters, simplification, and direct waypoint cleanup
-- `mark_backend.py` — runtime installation order and profile initialization
-- `mark_postback_runtime.py` — browser-faithful CHP detail selection
-- `mark_detail_runtime.py` — filtering, strict detail parsing, CAD-coordinate match
-- `notification_runtime.py` — Pushover, ntfy, Gotify, and webhook adapters
-- `service_area_runtime.py` — GeoJSON validation and polygon installation
-- `test_maps/san_diego_region_smoke_test.geojson` — broad test-only map
-- `HANDOFF.md` — canonical continuation guide
+- `mark_region_entry.py` — current GUI entry: region selector, visible map controls, first-run helper, versioned window title.
+- `mark_update_entry.py` — GUI update, notification-provider, and alert-policy controls.
+- `update_runtime.py` — safe Git update discovery and fast-forward installation.
+- `mark_gui_entry.py` — safe GUI entry, profiles, filters, simplification, and direct waypoint cleanup.
+- `mark_backend.py` — runtime installation order and profile initialization.
+- `chp_center_runtime.py` — selected CHP communications-center fetch/parse support.
+- `mark_filter_runtime.py` — wildcard-aware AREA and Type filters.
+- `mark_postback_runtime.py` — browser-faithful CHP detail selection.
+- `mark_detail_runtime.py` — filtering, strict detail parsing, CAD-coordinate match.
+- `notification_runtime.py` — Pushover, ntfy, Gotify, and webhook adapters.
+- `service_area_runtime.py` — GeoJSON validation and polygon installation.
+- `scripts/validate_release.py` — release preflight validation.
+- `scripts/build_release.py` — clean release ZIP, manifest, and checksum builder.
+- `test_maps/san_diego_region_smoke_test.geojson` — broad static test-only map.
+- `HANDOFF.md` — canonical continuation guide.
