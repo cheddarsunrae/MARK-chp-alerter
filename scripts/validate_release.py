@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import py_compile
+import subprocess
 import sys
 from pathlib import Path
 
@@ -46,19 +47,34 @@ PYTHON_FILES = tuple(path for path in REQUIRED_FILES if path.endswith(".py")) + 
     "update_runtime.py",
 )
 
-FORBIDDEN_RELEASE_PATHS = (
+FORBIDDEN_TRACKED_PATHS = (
     ".env",
-    "runtime",
-    ".venv",
-    "venv",
-    "dist",
-    "releases",
+    "runtime/",
+    ".venv/",
+    "venv/",
+    "dist/",
+    "releases/",
 )
 
 
 def _fail(message: str) -> None:
     print(f"ERROR: {message}", file=sys.stderr)
     raise SystemExit(1)
+
+
+def _git_ls_files() -> set[str]:
+    try:
+        result = subprocess.run(
+            ["git", "ls-files"],
+            cwd=ROOT,
+            check=True,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return set()
+    return {line.strip().replace("\\", "/") for line in result.stdout.splitlines() if line.strip()}
 
 
 def validate_required_files() -> None:
@@ -85,19 +101,21 @@ def validate_python_compile() -> None:
             py_compile.compile(str(path), doraise=True)
 
 
-def validate_secrets_absent_from_repo() -> None:
-    # These are allowed to be ignored/untracked locally, but must not be committed.
-    for relative in FORBIDDEN_RELEASE_PATHS:
-        path = ROOT / relative
-        if path.is_file() and relative == ".env":
-            _fail("A committed .env file would expose local configuration/secrets")
+def validate_forbidden_paths_not_tracked() -> None:
+    tracked = _git_ls_files()
+    for forbidden in FORBIDDEN_TRACKED_PATHS:
+        if forbidden.endswith("/"):
+            if any(path.startswith(forbidden) for path in tracked):
+                _fail(f"Forbidden tracked release/runtime directory: {forbidden}")
+        elif forbidden in tracked:
+            _fail(f"Forbidden tracked secret/runtime file: {forbidden}")
 
 
 def main() -> int:
     validate_required_files()
     validate_json_files()
     validate_python_compile()
-    validate_secrets_absent_from_repo()
+    validate_forbidden_paths_not_tracked()
     print("MARK release validation passed.")
     return 0
 
