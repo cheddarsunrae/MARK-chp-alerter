@@ -28,6 +28,7 @@ REQUIRED_FILES = (
     "mark_gui_entry.py",
     "mark_app.py",
     "mark_backend.py",
+    "address_box_runtime.py",
     "chp_center_runtime.py",
     "mark_filter_runtime.py",
     "mark_detail_runtime.py",
