@@ -23,6 +23,8 @@ QUICK_START_GUIDE = ROOT / "MARK_QUICK_START_GUIDE.md"
 FIRST_RUN_FLAG = ROOT / "runtime" / "first-run-helper-dismissed"
 DEFAULT_CENTER_CODE = "BCCC"
 DEFAULT_CENTER_NAME = "Border"
+DEFAULT_AREA_PREFIXES = "BC,El"
+DEFAULT_TYPE_FRAGMENTS = "Unk,1140,1141,Min,Maj,1179,1180,1178,un w,Repo"
 
 AREA_PRESETS: tuple[tuple[str, str], ...] = (
     ("Border + El Cajon", "BC,El"),
@@ -156,6 +158,8 @@ class RegionMarkApp(mark_update_entry.UpdatingMarkApp):
                 "CHP_ALERT_COMM_CENTER_NAME": DEFAULT_CENTER_NAME,
                 "CHP_ALERT_COMM_CENTER_DISPLAY": f"{DEFAULT_CENTER_NAME} ({DEFAULT_CENTER_CODE})",
                 "CHP_ALERT_AREA_PRESET": "Border + El Cajon",
+                "CHP_ALERT_AREA_PREFIXES": DEFAULT_AREA_PREFIXES,
+                "CHP_ALERT_TYPE_FRAGMENTS": DEFAULT_TYPE_FRAGMENTS,
                 "CHP_ALERT_BOUNDARY_BUFFER_METERS": "0",
                 "CHP_ALERT_ADDRESS_BOX_ADDRESS": "",
                 "CHP_ALERT_ADDRESS_BOX_HALF_SIZE_METERS": str(int(address_box_runtime.DEFAULT_HALF_SIZE_METERS)),
@@ -270,12 +274,7 @@ class RegionMarkApp(mark_update_entry.UpdatingMarkApp):
         row_center.pack(fill="x", pady=(7, 0))
         ttk.Label(row_center, text="CHP center").pack(side="left")
         labels = [center_label(center) for center in self.center_options]
-        combo = ttk.Combobox(
-            row_center,
-            textvariable=self.vars["CHP_ALERT_COMM_CENTER_DISPLAY"],
-            values=labels,
-            state="readonly",
-        )
+        combo = ttk.Combobox(row_center, textvariable=self.vars["CHP_ALERT_COMM_CENTER_DISPLAY"], values=labels, state="readonly")
         combo.pack(side="left", fill="x", expand=True, padx=(8, 0))
         combo.bind("<<ComboboxSelected>>", lambda _event: self._center_selection_changed())
 
@@ -304,9 +303,7 @@ class RegionMarkApp(mark_update_entry.UpdatingMarkApp):
         row_area_value = ttk.Frame(area_box)
         row_area_value.pack(fill="x", pady=(7, 0))
         ttk.Label(row_area_value, text="AREA prefixes").pack(side="left")
-        ttk.Entry(row_area_value, textvariable=self.vars["CHP_ALERT_AREA_PREFIXES"]).pack(
-            side="left", fill="x", expand=True, padx=(8, 4)
-        )
+        ttk.Entry(row_area_value, textvariable=self.vars["CHP_ALERT_AREA_PREFIXES"]).pack(side="left", fill="x", expand=True, padx=(8, 4))
         ttk.Button(row_area_value, text="Apply Preset", command=self._area_preset_changed).pack(side="left")
         ttk.Label(
             area_box,
@@ -317,58 +314,34 @@ class RegionMarkApp(mark_update_entry.UpdatingMarkApp):
         row_map = ttk.Frame(panel)
         row_map.pack(fill="x", pady=(9, 0))
         ttk.Label(row_map, text="Service-area map").pack(side="left")
-        ttk.Entry(row_map, textvariable=self.vars["CHP_ALERT_SERVICE_AREA_FILE"]).pack(
-            side="left", fill="x", expand=True, padx=(8, 4)
-        )
+        ttk.Entry(row_map, textvariable=self.vars["CHP_ALERT_SERVICE_AREA_FILE"]).pack(side="left", fill="x", expand=True, padx=(8, 4))
         ttk.Button(row_map, text="Browse", command=self.browse_service_area_map).pack(side="left")
 
         row_buffer = ttk.Frame(panel)
         row_buffer.pack(fill="x", pady=(7, 0))
         ttk.Label(row_buffer, text="Boundary buffer metres").pack(side="left")
         ttk.Entry(row_buffer, textvariable=self.vars["CHP_ALERT_BOUNDARY_BUFFER_METERS"], width=10).pack(side="left", padx=(8, 4))
-        ttk.Label(
-            row_buffer,
-            text="0 = strict inside only; use a positive value to alert near-boundary calls.",
-            wraplength=300,
-        ).pack(side="left", padx=(6, 0))
+        ttk.Label(row_buffer, text="0 = strict inside only; use a positive value to alert near-boundary calls.", wraplength=300).pack(side="left", padx=(6, 0))
 
         address_box = ttk.LabelFrame(panel, text="Address Box Map", padding=8)
         address_box.pack(fill="x", pady=(9, 0))
-        ttk.Label(
-            address_box,
-            text="Generate a square service-area map centered on one address. Review the map visually before operational use.",
-            wraplength=380,
-        ).pack(anchor="w", fill="x")
-
+        ttk.Label(address_box, text="Generate a square service-area map centered on one address. Review the map visually before operational use.", wraplength=380).pack(anchor="w", fill="x")
         row_address = ttk.Frame(address_box)
         row_address.pack(fill="x", pady=(7, 0))
         ttk.Label(row_address, text="Address").pack(side="left")
-        ttk.Entry(row_address, textvariable=self.vars["CHP_ALERT_ADDRESS_BOX_ADDRESS"]).pack(
-            side="left", fill="x", expand=True, padx=(8, 0)
-        )
-
+        ttk.Entry(row_address, textvariable=self.vars["CHP_ALERT_ADDRESS_BOX_ADDRESS"]).pack(side="left", fill="x", expand=True, padx=(8, 0))
         row_size = ttk.Frame(address_box)
         row_size.pack(fill="x", pady=(7, 0))
         ttk.Label(row_size, text="Box half-size metres").pack(side="left")
-        ttk.Entry(row_size, textvariable=self.vars["CHP_ALERT_ADDRESS_BOX_HALF_SIZE_METERS"], width=10).pack(
-            side="left", padx=(8, 4)
-        )
+        ttk.Entry(row_size, textvariable=self.vars["CHP_ALERT_ADDRESS_BOX_HALF_SIZE_METERS"], width=10).pack(side="left", padx=(8, 4))
         ttk.Button(row_size, text="Build Address Box Map", command=self.build_address_box_map).pack(side="left", padx=(6, 0))
-        ttk.Label(
-            row_size,
-            text="Example: 3000 creates a box about 6 km wide by 6 km tall.",
-            wraplength=250,
-        ).pack(side="left", padx=(8, 0))
+        ttk.Label(row_size, text="Example: 3000 creates a box about 6 km wide by 6 km tall.", wraplength=250).pack(side="left", padx=(8, 0))
 
         row_actions = ttk.Frame(panel)
         row_actions.pack(fill="x", pady=(7, 0))
         ttk.Button(row_actions, text="Load Center Test Map", command=self.load_center_smoke_test_map).pack(side="left")
         ttk.Button(row_actions, text="Save Region/Map", command=self.save_configuration).pack(side="left", padx=(6, 0))
-        ttk.Label(
-            row_actions,
-            text="Test maps use AREA=* and Type=* so any listed incident can validate the path.",
-            wraplength=330,
-        ).pack(side="left", padx=(8, 0))
+        ttk.Label(row_actions, text="Test maps use AREA=* so all listed AREA rows can validate the path; Type fragments stay fixed.", wraplength=330).pack(side="left", padx=(8, 0))
 
     def _sync_center_display_from_code(self) -> None:
         code = self.vars.get("CHP_ALERT_COMM_CENTER", tk.StringVar(value=DEFAULT_CENTER_CODE)).get().strip().upper()
@@ -381,7 +354,7 @@ class RegionMarkApp(mark_update_entry.UpdatingMarkApp):
         self.vars["CHP_ALERT_COMM_CENTER_DISPLAY"].set(center_label(center))
 
     def _sync_area_preset_from_prefixes(self) -> None:
-        current = self.vars.get("CHP_ALERT_AREA_PREFIXES", tk.StringVar(value="BC,El")).get()
+        current = self.vars.get("CHP_ALERT_AREA_PREFIXES", tk.StringVar(value=DEFAULT_AREA_PREFIXES)).get()
         self.vars["CHP_ALERT_AREA_PRESET"].set(area_preset_for_prefixes(current))
 
     def _area_preset_changed(self) -> None:
@@ -401,12 +374,9 @@ class RegionMarkApp(mark_update_entry.UpdatingMarkApp):
         try:
             center = label_to_center(self.vars["CHP_ALERT_COMM_CENTER_DISPLAY"].get(), self.center_options)
             map_file = self.vars["CHP_ALERT_SERVICE_AREA_FILE"].get() or "not selected"
-            area = self.vars["CHP_ALERT_AREA_PREFIXES"].get() or "default"
+            area = self.vars["CHP_ALERT_AREA_PREFIXES"].get() or DEFAULT_AREA_PREFIXES
             buffer_metres = self.vars.get("CHP_ALERT_BOUNDARY_BUFFER_METERS", tk.StringVar(value="0")).get() or "0"
-            return (
-                f"Center: {center['name']} ({center['code']}) • Map: {Path(map_file).name} • "
-                f"AREA: {area} • Type fragments: fixed default • Buffer: {buffer_metres} m"
-            )
+            return f"Center: {center['name']} ({center['code']}) • Map: {Path(map_file).name} • AREA: {area} • Type fragments: fixed default • Buffer: {buffer_metres} m"
         except Exception:
             return "Center/map not configured"
 
@@ -446,10 +416,7 @@ class RegionMarkApp(mark_update_entry.UpdatingMarkApp):
                         "chp_center_code": code,
                         "chp_center_name": name,
                     },
-                    "geometry": {
-                        "type": "Polygon",
-                        "coordinates": [[[west, south], [east, south], [east, north], [west, north], [west, south]]],
-                    },
+                    "geometry": {"type": "Polygon", "coordinates": [[[west, south], [east, south], [east, north], [west, north], [west, south]]]},
                 }
             ],
         }
@@ -459,8 +426,8 @@ class RegionMarkApp(mark_update_entry.UpdatingMarkApp):
         center = label_to_center(self.vars["CHP_ALERT_COMM_CENTER_DISPLAY"].get(), self.center_options)
         if not messagebox.askyesno(
             "Load broad test map?",
-            "This will load a broad smoke-test map for the selected CHP center and set AREA=* and Type=* so any listed incident can test the pipeline.\n\n"
-            "This is not an operational service-area boundary. Continue?",
+            "This will load a broad smoke-test map for the selected CHP center and set AREA=* so all listed AREA rows can test the pipeline.\n\n"
+            "Alert Type fragments are not changed. This is not an operational service-area boundary. Continue?",
             parent=self,
         ):
             return
@@ -475,7 +442,7 @@ class RegionMarkApp(mark_update_entry.UpdatingMarkApp):
             self.vars["CHP_ALERT_BOUNDARY_BUFFER_METERS"].set("0")
             self.vars["CHP_ALERT_AREA_PREFIXES"].set("*")
             self.vars["CHP_ALERT_AREA_PRESET"].set("All CHP Areas / smoke test")
-            self.vars["CHP_ALERT_TYPE_FRAGMENTS"].set("*")
+            self.vars["CHP_ALERT_TYPE_FRAGMENTS"].set(self.vars["CHP_ALERT_TYPE_FRAGMENTS"].get() or DEFAULT_TYPE_FRAGMENTS)
             self.map_path = path
             self.reload_map(prompt=False)
             self.save_configuration(quiet=True)
@@ -504,10 +471,7 @@ class RegionMarkApp(mark_update_entry.UpdatingMarkApp):
         ):
             return
         try:
-            latitude, longitude, display_name = address_box_runtime.geocode_address(
-                address,
-                user_agent=f"MARK-chp-alerter/{self.app_version}",
-            )
+            latitude, longitude, display_name = address_box_runtime.geocode_address(address, user_agent=f"MARK-chp-alerter/{self.app_version}")
             payload = address_box_runtime.build_address_box_geojson(
                 address=address,
                 latitude=latitude,
@@ -543,10 +507,8 @@ class RegionMarkApp(mark_update_entry.UpdatingMarkApp):
         values["CHP_ALERT_SERVICE_AREA_FILE"] = values.get("CHP_ALERT_SERVICE_AREA_FILE", "").strip()
         if not values["CHP_ALERT_SERVICE_AREA_FILE"]:
             raise ValueError("Select a service-area GeoJSON map.")
-        try:
-            values["CHP_ALERT_AREA_PREFIXES"] = normalize_area_prefixes(values.get("CHP_ALERT_AREA_PREFIXES", ""))
-        except ValueError as exc:
-            raise ValueError(str(exc)) from exc
+        values["CHP_ALERT_AREA_PREFIXES"] = normalize_area_prefixes(values.get("CHP_ALERT_AREA_PREFIXES", DEFAULT_AREA_PREFIXES))
+        values["CHP_ALERT_TYPE_FRAGMENTS"] = values.get("CHP_ALERT_TYPE_FRAGMENTS", "").strip() or DEFAULT_TYPE_FRAGMENTS
         self.vars["CHP_ALERT_AREA_PREFIXES"].set(values["CHP_ALERT_AREA_PREFIXES"])
         self._sync_area_preset_from_prefixes()
 
@@ -588,9 +550,7 @@ class RegionMarkApp(mark_update_entry.UpdatingMarkApp):
             handle.write(f"CHP_ALERT_BOUNDARY_BUFFER_METERS={values.get('CHP_ALERT_BOUNDARY_BUFFER_METERS', '0')}\n")
             handle.write("\n# Address box map helper\n")
             handle.write(f"CHP_ALERT_ADDRESS_BOX_ADDRESS={values.get('CHP_ALERT_ADDRESS_BOX_ADDRESS', '')}\n")
-            handle.write(
-                f"CHP_ALERT_ADDRESS_BOX_HALF_SIZE_METERS={values.get('CHP_ALERT_ADDRESS_BOX_HALF_SIZE_METERS', str(int(address_box_runtime.DEFAULT_HALF_SIZE_METERS)))}\n"
-            )
+            handle.write(f"CHP_ALERT_ADDRESS_BOX_HALF_SIZE_METERS={values.get('CHP_ALERT_ADDRESS_BOX_HALF_SIZE_METERS', str(int(address_box_runtime.DEFAULT_HALF_SIZE_METERS)))}\n")
 
 
 def main() -> int:
