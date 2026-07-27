@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import chp_jamul_alert as core
+import mark_backend
 from geometry_utils import remove_shorter_path_between, simplify_closed_polygon
 from mark_detail_runtime import (
     area_matches,
@@ -123,6 +124,42 @@ class FastFilterTests(unittest.TestCase):
             self.assertTrue(type_matches("Report of Fire"))
             self.assertTrue(type_matches("MINOR INJURY COLLISION"))
             self.assertFalse(type_matches("Traffic Hazard"))
+
+
+class BoundaryBufferTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.original_polygon = core.SERVICE_AREA_POLYGON
+        self.original_coordinate_match = core.coordinate_match
+        core.SERVICE_AREA_POLYGON = (
+            (0.0, 0.0),
+            (0.0, 0.01),
+            (0.01, 0.01),
+            (0.01, 0.0),
+        )
+
+    def tearDown(self) -> None:
+        core.SERVICE_AREA_POLYGON = self.original_polygon
+        core.coordinate_match = self.original_coordinate_match
+
+    def test_boundary_buffer_disabled_keeps_outside_coordinates_irrelevant(self) -> None:
+        mark_backend.install_generic_coordinate_match(
+            "active service-area polygon",
+            boundary_buffer_meters=0,
+        )
+        result = core.coordinate_match((0.005, 0.011))
+        self.assertFalse(result.relevant)
+        self.assertIn("outside active service-area polygon", result.reason)
+
+    def test_boundary_buffer_alerts_nearby_outside_coordinates(self) -> None:
+        mark_backend.install_generic_coordinate_match(
+            "active service-area polygon",
+            boundary_buffer_meters=250,
+        )
+        result = core.coordinate_match((0.005, 0.011))
+        self.assertTrue(result.relevant)
+        self.assertIn("outside active service-area polygon", result.reason)
+        self.assertIn("within boundary buffer", result.reason)
+        self.assertGreater(result.distance_km or 0, 0)
 
 
 class GeometryTests(unittest.TestCase):
