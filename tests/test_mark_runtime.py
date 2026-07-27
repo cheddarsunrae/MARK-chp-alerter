@@ -8,6 +8,7 @@ from unittest.mock import patch
 import address_box_runtime
 import chp_jamul_alert as core
 import mark_backend
+import mark_filter_runtime
 from geometry_utils import remove_shorter_path_between, simplify_closed_polygon
 from mark_detail_runtime import (
     area_matches,
@@ -130,30 +131,26 @@ class FastFilterTests(unittest.TestCase):
     def test_station_36_area_prefix_defaults(self) -> None:
         with patch.dict(os.environ, {}, clear=False):
             os.environ.pop("CHP_ALERT_AREA_PREFIXES", None)
-            os.environ.pop("CHP_ALERT_COMM_CENTER", None)
-            self.assertTrue(area_matches("Border"))
+            self.assertTrue(area_matches("BC"))
             self.assertTrue(area_matches("El Cajon"))
             self.assertFalse(area_matches("San Diego"))
             self.assertFalse(area_matches("Temecula"))
             self.assertFalse(area_matches("Oceanside"))
 
     def test_area_prefixes_use_first_two_characters(self) -> None:
-        with patch.dict(os.environ, {"CHP_ALERT_AREA_PREFIXES": "Sa,Oc", "CHP_ALERT_COMM_CENTER": ""}):
+        with patch.dict(os.environ, {"CHP_ALERT_AREA_PREFIXES": "Sa,Oc"}):
             self.assertTrue(area_matches("San Diego"))
             self.assertTrue(area_matches("Oceanside"))
             self.assertFalse(area_matches("El Cajon"))
 
-    def test_border_center_always_includes_border_region_prefix(self) -> None:
-        with patch.dict(os.environ, {"CHP_ALERT_AREA_PREFIXES": "Sa", "CHP_ALERT_COMM_CENTER": "BCCC"}):
+    def test_required_regional_area_prefix_is_merged_for_bccc(self) -> None:
+        with patch.dict(
+            os.environ,
+            {"CHP_ALERT_COMM_CENTER": "BCCC", "CHP_ALERT_AREA_PREFIXES": "Sa"},
+        ):
             self.assertEqual(configured_area_prefixes(), ("Bo", "Sa"))
             self.assertTrue(area_matches("Border"))
             self.assertTrue(area_matches("San Diego"))
-            self.assertFalse(area_matches("El Cajon"))
-
-    def test_legacy_bc_prefix_normalizes_to_border(self) -> None:
-        with patch.dict(os.environ, {"CHP_ALERT_AREA_PREFIXES": "BC", "CHP_ALERT_COMM_CENTER": ""}):
-            self.assertEqual(configured_area_prefixes(), ("Bo",))
-            self.assertTrue(area_matches("Border"))
 
     def test_type_fragments_are_case_insensitive_substrings(self) -> None:
         with patch.dict(
@@ -175,6 +172,11 @@ class FastFilterTests(unittest.TestCase):
             self.assertTrue(type_matches("Anything"))
             self.assertEqual(matched_area_prefixes("Anything"), ("*",))
             self.assertEqual(matched_type_fragments("Anything"), ("*",))
+
+    def test_type_wildcard_is_not_an_operational_alert_trigger(self) -> None:
+        with patch.dict(os.environ, {"CHP_ALERT_TYPE_FRAGMENTS": "*"}):
+            self.assertFalse(mark_filter_runtime.type_matches("Traffic Hazard"))
+            self.assertTrue(mark_filter_runtime.type_matches("Trfc Collision-1141 Enrt"))
 
 
 class BoundaryBufferTests(unittest.TestCase):
