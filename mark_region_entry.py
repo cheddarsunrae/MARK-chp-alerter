@@ -6,6 +6,7 @@ import json
 import os
 import re
 import webbrowser
+from datetime import datetime
 from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
@@ -61,6 +62,7 @@ AREA_NAME_ALIASES = {
     "temecula": "Te",
     "te": "Te",
 }
+TYPE_WILDCARD_VALUES = {"*", "all", "any"}
 
 
 def _slug(value: str) -> str:
@@ -107,6 +109,21 @@ def normalize_area_prefixes(value: str, required: tuple[str, ...] = ()) -> str:
         if value_out and value_out not in normalized:
             normalized.insert(0, value_out)
     return ",".join(normalized)
+
+
+def normalize_type_fragments(value: str) -> str:
+    """Keep alert type fragments on the fixed operational defaults.
+
+    Earlier beta smoke-test flows could save '*' into CHP_ALERT_TYPE_FRAGMENTS,
+    which makes non-alertable categories such as Traffic Hazard alertable. Treat
+    wildcard values as a request to restore the fixed default trigger set.
+    """
+    raw = (value or "").strip()
+    if not raw:
+        return DEFAULT_TYPE_FRAGMENTS
+    if raw.casefold() in TYPE_WILDCARD_VALUES:
+        return DEFAULT_TYPE_FRAGMENTS
+    return raw
 
 
 def read_version() -> str:
@@ -252,7 +269,7 @@ class RegionMarkApp(mark_update_entry.UpdatingMarkApp):
             "2. Select every CHP AREA prefix that overlaps the active map.",
             "3. Load a broad smoke-test map or build an address box map.",
             "4. Configure and test notifications.",
-            "5. Replace test maps before real operational use.",
+            "5. Save Region/Map and restart the monitor after map or AREA changes.",
         ):
             ttk.Label(steps, text=text, wraplength=560).pack(anchor="w", pady=2)
 
@@ -266,6 +283,7 @@ class RegionMarkApp(mark_update_entry.UpdatingMarkApp):
     def load_configuration(self) -> None:
         super().load_configuration()
         self._ensure_region_vars()
+        self.vars["CHP_ALERT_TYPE_FRAGMENTS"].set(normalize_type_fragments(self.vars["CHP_ALERT_TYPE_FRAGMENTS"].get()))
         self._sync_center_display_from_code()
         self._sync_area_checkboxes_from_prefixes()
         self._refresh_region_summary()
@@ -327,6 +345,19 @@ class RegionMarkApp(mark_update_entry.UpdatingMarkApp):
             command=self._apply_area_checkbox_selection,
         ).grid(row=3, column=0, columnspan=2, sticky="w", pady=(4, 0))
 
+        quick_buttons = ttk.Frame(area_box)
+        quick_buttons.pack(fill="x", pady=(8, 0))
+        for index, (label, prefix) in enumerate(AREA_OPTIONS):
+            ttk.Button(
+                quick_buttons,
+                text=f"Toggle {label}",
+                command=lambda p=prefix: self._toggle_area_prefix_button(p),
+            ).grid(row=index // 2, column=index % 2, sticky="ew", padx=(0, 6), pady=2)
+        ttk.Button(quick_buttons, text="All Areas", command=self._select_all_area_prefixes).grid(row=3, column=0, sticky="ew", padx=(0, 6), pady=2)
+        ttk.Button(quick_buttons, text="Clear Optional", command=self._clear_optional_area_prefixes).grid(row=3, column=1, sticky="ew", padx=(0, 6), pady=2)
+        quick_buttons.columnconfigure(0, weight=1)
+        quick_buttons.columnconfigure(1, weight=1)
+
         row_area_value = ttk.Frame(area_box)
         row_area_value.pack(fill="x", pady=(7, 0))
         ttk.Label(row_area_value, text="Saved AREA prefixes").pack(side="left")
@@ -367,8 +398,8 @@ class RegionMarkApp(mark_update_entry.UpdatingMarkApp):
         row_actions = ttk.Frame(panel)
         row_actions.pack(fill="x", pady=(7, 0))
         ttk.Button(row_actions, text="Load Center Test Map", command=self.load_center_smoke_test_map).pack(side="left")
-        ttk.Button(row_actions, text="Save Region/Map", command=self.save_configuration).pack(side="left", padx=(6, 0))
-        ttk.Label(row_actions, text="Test maps use AREA=* so all listed AREA rows can validate the path; Type fragments stay fixed.", wraplength=330).pack(side="left", padx=(8, 0))
+        ttk.Button(row_actions, text="Save Region/Map", command=self.save_region_map).pack(side="left", padx=(6, 0))
+        ttk.Label(row_actions, text="Region/map saves clear stale dedupe state and can restart the running monitor.", wraplength=330).pack(side="left", padx=(8, 0))
 
         self._sync_area_checkboxes_from_prefixes()
 
@@ -415,6 +446,25 @@ class RegionMarkApp(mark_update_entry.UpdatingMarkApp):
             return
         selected = [prefix for _label, prefix in AREA_OPTIONS if self.area_prefix_checks.get(prefix) and self.area_prefix_checks[prefix].get()]
         normalized = normalize_area_prefixes(",".join(selected), self._required_area_prefixes())
+        self.vars["CHP_ALERT_AREA_PREFIXES"].set(normalized)
+        self._sync_area_checkboxes_from_prefixes()
+        self._refresh_region_summary()
+
+    def _toggle_area_prefix_button(self, prefix: str) -> None:
+        if prefix not in self.area_prefix_checks:
+            return
+        if self.area_prefix_checks.get("*"):
+            self.area_prefix_checks["*"].set(False)
+        self.area_prefix_checks[prefix].set(not self.area_prefix_checks[prefix].get())
+        self._apply_area_checkbox_selection()
+
+    def _select_all_area_prefixes(self) -> None:
+        self.vars["CHP_ALERT_AREA_PREFIXES"].set("*")
+        self._sync_area_checkboxes_from_prefixes()
+        self._refresh_region_summary()
+
+    def _clear_optional_area_prefixes(self) -> None:
+        normalized = normalize_area_prefixes("", self._required_area_prefixes())
         self.vars["CHP_ALERT_AREA_PREFIXES"].set(normalized)
         self._sync_area_checkboxes_from_prefixes()
         self._refresh_region_summary()
@@ -507,13 +557,15 @@ class RegionMarkApp(mark_update_entry.UpdatingMarkApp):
             self.vars["CHP_ALERT_SERVICE_AREA_LABEL"].set(f"{center['name']} CHP center smoke-test boundary")
             self.vars["CHP_ALERT_BOUNDARY_BUFFER_METERS"].set("0")
             self.vars["CHP_ALERT_AREA_PREFIXES"].set("*")
-            self.vars["CHP_ALERT_TYPE_FRAGMENTS"].set(self.vars["CHP_ALERT_TYPE_FRAGMENTS"].get() or DEFAULT_TYPE_FRAGMENTS)
+            self.vars["CHP_ALERT_TYPE_FRAGMENTS"].set(normalize_type_fragments(self.vars["CHP_ALERT_TYPE_FRAGMENTS"].get()))
             self._sync_area_checkboxes_from_prefixes()
             self.map_path = path
             self.reload_map(prompt=False)
             self.save_configuration(quiet=True)
+            self._backup_state_for_region_change()
             self._refresh_region_summary()
             self.append_log(f"Loaded {center['name']} smoke-test map: {path}")
+            self._prompt_restart_after_region_change("Loaded center test map")
         except Exception as exc:
             messagebox.showerror("Could not load test map", str(exc), parent=self)
 
@@ -550,10 +602,12 @@ class RegionMarkApp(mark_update_entry.UpdatingMarkApp):
             self.vars["CHP_ALERT_SERVICE_AREA_FILE"].set(str(path))
             self.vars["CHP_ALERT_SERVICE_AREA_LABEL"].set(f"Address box: {address}")
             self.vars["CHP_ALERT_BOUNDARY_BUFFER_METERS"].set("0")
+            self.vars["CHP_ALERT_TYPE_FRAGMENTS"].set(normalize_type_fragments(self.vars["CHP_ALERT_TYPE_FRAGMENTS"].get()))
             self._sync_area_checkboxes_from_prefixes()
             self.map_path = path
             self.reload_map(prompt=False)
             self.save_configuration(quiet=True)
+            self._backup_state_for_region_change()
             self._refresh_region_summary()
             self.append_log(f"Generated address box map: {path} centered at {latitude:.6f}, {longitude:.6f}")
             messagebox.showinfo(
@@ -561,8 +615,74 @@ class RegionMarkApp(mark_update_entry.UpdatingMarkApp):
                 f"Generated and loaded:\n{path}\n\nCenter:\n{display_name}\n\nConfirm the CHP AREA selections before starting the monitor.",
                 parent=self,
             )
+            self._prompt_restart_after_region_change("Generated address box map")
         except Exception as exc:
             messagebox.showerror("Could not build address box map", str(exc), parent=self)
+
+    def _monitor_running(self) -> bool:
+        return bool(self.process is not None and self.process.poll() is None)
+
+    def _backup_state_for_region_change(self) -> None:
+        raw_path = self.vars.get("CHP_ALERT_STATE_FILE", tk.StringVar(value="")).get().strip()
+        if not raw_path:
+            return
+        path = Path(raw_path).expanduser()
+        if not path.exists():
+            return
+        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        backup = path.with_name(f"{path.name}.before-region-map-change-{stamp}.bak")
+        try:
+            path.replace(backup)
+            self.append_log(f"Backed up and cleared stale monitor state: {backup}")
+        except OSError as exc:
+            messagebox.showwarning(
+                "Could not clear stale state",
+                f"The new region/map was saved, but MARK could not clear the old dedupe state:\n{exc}\n\nStop the monitor and delete the state file manually if stale alerts continue.",
+                parent=self,
+            )
+
+    def save_region_map(self) -> bool:
+        if not self.save_configuration(quiet=True):
+            return False
+        self._backup_state_for_region_change()
+        self._refresh_region_summary()
+        self._prompt_restart_after_region_change("Saved region/map")
+        return True
+
+    def _prompt_restart_after_region_change(self, action: str) -> None:
+        if self._monitor_running():
+            if messagebox.askyesno(
+                "Restart monitor now?",
+                f"{action}. The running monitor still has the old map/AREA settings in memory until it restarts.\n\nRestart it now?",
+                parent=self,
+            ):
+                self.restart_monitor_after_region_change()
+            else:
+                messagebox.showwarning(
+                    "Restart required",
+                    "The new region/map is saved, but the current monitor process is still using the old settings. Stop and start the monitor before trusting alerts.",
+                    parent=self,
+                )
+        else:
+            messagebox.showinfo(
+                "Region/map saved",
+                f"{action}. Start the monitor to use the new map and AREA settings.",
+                parent=self,
+            )
+
+    def restart_monitor_after_region_change(self) -> None:
+        if not self._monitor_running():
+            self.start_monitor()
+            return
+        self.append_log("Restarting monitor to apply region/map changes")
+        self.stop_monitor()
+        self.after(650, self._start_monitor_when_stopped)
+
+    def _start_monitor_when_stopped(self) -> None:
+        if self.process is not None and self.process.poll() is None:
+            self.after(650, self._start_monitor_when_stopped)
+            return
+        self.start_monitor()
 
     def collect_configuration(self) -> dict[str, str]:
         self._ensure_region_vars()
@@ -576,8 +696,9 @@ class RegionMarkApp(mark_update_entry.UpdatingMarkApp):
             raise ValueError("Select a service-area GeoJSON map.")
         required = required_area_prefixes_for_center(center["code"])
         values["CHP_ALERT_AREA_PREFIXES"] = normalize_area_prefixes(values.get("CHP_ALERT_AREA_PREFIXES", DEFAULT_AREA_PREFIXES), required)
-        values["CHP_ALERT_TYPE_FRAGMENTS"] = values.get("CHP_ALERT_TYPE_FRAGMENTS", "").strip() or DEFAULT_TYPE_FRAGMENTS
+        values["CHP_ALERT_TYPE_FRAGMENTS"] = normalize_type_fragments(values.get("CHP_ALERT_TYPE_FRAGMENTS", ""))
         self.vars["CHP_ALERT_AREA_PREFIXES"].set(values["CHP_ALERT_AREA_PREFIXES"])
+        self.vars["CHP_ALERT_TYPE_FRAGMENTS"].set(values["CHP_ALERT_TYPE_FRAGMENTS"])
         self._sync_area_checkboxes_from_prefixes()
 
         raw_buffer = values.get("CHP_ALERT_BOUNDARY_BUFFER_METERS", "0").strip() or "0"
