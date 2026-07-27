@@ -12,6 +12,8 @@ from mark_detail_runtime import (
     area_matches,
     extract_detail_coordinates,
     match_incident,
+    matched_area_prefixes,
+    matched_type_fragments,
     parse_detail_lines,
     type_matches,
 )
@@ -95,7 +97,31 @@ class DetailParserTests(unittest.TestCase):
             result = match_incident(incident)
         coordinate_match.assert_called_once_with((32.65, -116.93))
         self.assertTrue(result.relevant)
+        self.assertIn("type fragment match 1141", result.reason)
         self.assertIn("CHP detail Lat/Lon", result.reason)
+
+    def test_non_alertable_type_is_tracked_but_not_alerted_inside_polygon(self) -> None:
+        incident = SimpleNamespace(
+            number="0048",
+            incident_type="Traffic Hazard",
+            details=("Lat/Lon: 32.650000 / -116.930000",),
+        )
+        expected = core.MatchResult(
+            True,
+            "inside configured polygon",
+            "high",
+            32.65,
+            -116.93,
+            None,
+        )
+        with patch.dict(os.environ, {"CHP_ALERT_TYPE_FRAGMENTS": "1141"}), patch(
+            "mark_detail_runtime.core.coordinate_match",
+            return_value=expected,
+        ):
+            result = match_incident(incident)
+        self.assertFalse(result.relevant)
+        self.assertIn("tracked non-alertable type: Traffic Hazard", result.reason)
+        self.assertIn("inside configured polygon", result.reason)
 
 
 class FastFilterTests(unittest.TestCase):
@@ -124,6 +150,16 @@ class FastFilterTests(unittest.TestCase):
             self.assertTrue(type_matches("Report of Fire"))
             self.assertTrue(type_matches("MINOR INJURY COLLISION"))
             self.assertFalse(type_matches("Traffic Hazard"))
+
+    def test_wildcards_match_any_area_or_type(self) -> None:
+        with patch.dict(
+            os.environ,
+            {"CHP_ALERT_AREA_PREFIXES": "*", "CHP_ALERT_TYPE_FRAGMENTS": "*"},
+        ):
+            self.assertTrue(area_matches("Anything"))
+            self.assertTrue(type_matches("Anything"))
+            self.assertEqual(matched_area_prefixes("Anything"), ("*",))
+            self.assertEqual(matched_type_fragments("Anything"), ("*",))
 
 
 class BoundaryBufferTests(unittest.TestCase):
