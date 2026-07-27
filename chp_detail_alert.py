@@ -10,7 +10,7 @@ import os
 import re
 import sys
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -34,6 +34,8 @@ POSTBACK_PATTERN = re.compile(
     r"__doPostBack\(\s*['\"]gvIncidents['\"]\s*,\s*['\"](?P<argument>Select\$\d+)['\"]\s*\)",
     re.I,
 )
+INVALID_CACHE_KEY = "invalid_incidents"
+DEFAULT_INVALID_SKIP_SECONDS = 120.0
 
 
 @dataclass(frozen=True)
@@ -90,6 +92,114 @@ def hidden_fields(html: str) -> dict[str, str]:
         str(field.get("name")): str(field.get("value", ""))
         for field in soup.select("input[name]")
     }
+
+
+def configured_invalid_skip_seconds() -> float:
+    """Return how long known non-alerting incidents may skip detail refetches."""
+    raw = os.getenv("CHP_ALERT_INVALID_SKIP_SECONDS", str(int(DEFAULT_INVALID_SKIP_SECONDS))).strip()
+    if raw == "":
+        return 0.0
+    try:
+        value = float(raw)
+    except ValueError as exc:
+        raise ValueError("CHP_ALERT_INVALID_SKIP_SECONDS must be a number of seconds") from exc
+    if value < 0:
+        raise ValueError("CHP_ALERT_INVALID_SKIP_SECONDS cannot be negative")
+    return value
+
+
+def listing_fingerprint(incident: DetailedIncident) -> str:
+    """Fingerprint only the CHP listing-row fields used before detail fetch.
+
+    This intentionally excludes page_updated and details. It is used to decide
+    whether a known non-alerting incident can be skipped briefly without another
+    expensive detail postback. If the row's visible listing fields change, MARK
+    fetches and evaluates the detail again immediately.
+    """
+    payload = {
+        "number": incident.number,
+        "time_text": incident.time_text,
+        "incident_type": incident.incident_type,
+        "location": incident.location,
+        "location_description": incident.location_description,
+        "area": incident.area,
+        "detail_postback": incident.detail_postback,
+    }
+    canonical = json.dumps(payload, sort_keys=True, ensure_ascii=True)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _invalid_cache(state: dict[str, Any]) -> dict[str, Any]:
+    cache = state.setdefault(INVALID_CACHE_KEY, {})
+    if not isinstance(cache, dict):
+        cache = {}
+        state[INVALID_CACHE_KEY] = cache
+    return cache
+
+
+def _parse_iso_datetime(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def invalid_skip_entry(
+    state: dict[str, Any],
+    summary: DetailedIncident,
+    row_fingerprint: str,
+    now: datetime,
+) -> dict[str, Any] | None:
+    """Return the active invalid-cache entry for this listing row, if any."""
+    entry = _invalid_cache(state).get(summary.identity)
+    if not isinstance(entry, dict):
+        return None
+    if entry.get("listing_fingerprint") != row_fingerprint:
+        return None
+    skip_until = _parse_iso_datetime(str(entry.get("skip_until", "")))
+    if skip_until is None or now >= skip_until:
+        return None
+    return entry
+
+
+def remember_invalid_incident(
+    state: dict[str, Any],
+    incident: DetailedIncident,
+    row_fingerprint: str,
+    reason: str,
+    now: datetime,
+    skip_seconds: float,
+) -> str | None:
+    """Persist a short-lived rejected-incident cache entry."""
+    if skip_seconds <= 0:
+        return None
+    skip_until = now + timedelta(seconds=skip_seconds)
+    _invalid_cache(state)[incident.identity] = {
+        "number": incident.number,
+        "listing_fingerprint": row_fingerprint,
+        "detail_fingerprint": incident.detail_fingerprint,
+        "reason": reason,
+        "last_evaluated": now.isoformat(),
+        "skip_until": skip_until.isoformat(),
+    }
+    return skip_until.isoformat()
+
+
+def forget_invalid_incident(state: dict[str, Any], identity: str) -> None:
+    _invalid_cache(state).pop(identity, None)
+
+
+def prune_invalid_cache(state: dict[str, Any], active_identities: set[str]) -> None:
+    """Drop rejected-incident cache entries for calls no longer on the listing."""
+    cache = _invalid_cache(state)
+    for identity in list(cache):
+        if identity not in active_identities:
+            cache.pop(identity, None)
 
 
 def parse_incidents(html: str) -> list[DetailedIncident]:
@@ -293,8 +403,11 @@ def process_once(
     incidents = parse_incidents(html)
     records: dict[str, Any] = state.setdefault("incidents", {})
     first_run = not records
-    now = datetime.now(timezone.utc).isoformat()
-    alerts = discarded = detail_fetches = 0
+    now_dt = datetime.now(timezone.utc)
+    now = now_dt.isoformat()
+    invalid_skip_seconds = configured_invalid_skip_seconds()
+    alerts = discarded = detail_fetches = skipped_invalid = 0
+    active_identities = {summary.identity for summary in incidents}
 
     for summary in incidents:
         if is_discarded_area(summary.area):
@@ -302,6 +415,29 @@ def process_once(
             LOG.debug("Discarded incident %s immediately by AREA=%s", summary.number, summary.area)
             continue
         incident = summary
+        row_fingerprint = listing_fingerprint(summary)
+        cached_invalid = invalid_skip_entry(state, summary, row_fingerprint, now_dt)
+        if summary.detail_postback and cached_invalid:
+            skipped_invalid += 1
+            reason = str(cached_invalid.get("reason", "previously not alertable"))
+            records[summary.identity] = {
+                **records.get(summary.identity, {}),
+                "fingerprint": summary.fingerprint,
+                "listing_fingerprint": row_fingerprint,
+                "detail_fingerprint": cached_invalid.get("detail_fingerprint", ""),
+                "relevant": False,
+                "reason": f"skipped known non-alerting incident: {reason}",
+                "last_seen": now,
+                "invalid_cached": True,
+                "invalid_skip_until": cached_invalid.get("skip_until"),
+            }
+            LOG.debug(
+                "Skipped incident %s detail fetch until %s; reason=%s",
+                summary.number,
+                cached_invalid.get("skip_until"),
+                reason,
+            )
+            continue
         if summary.detail_postback:
             try:
                 incident = DetailedIncident(
@@ -324,10 +460,12 @@ def process_once(
         if first_run and not args.alert_existing:
             records[incident.identity] = {
                 "fingerprint": incident.fingerprint,
+                "listing_fingerprint": row_fingerprint,
                 "detail_fingerprint": incident.detail_fingerprint,
                 "relevant": False,
                 "reason": "primed without alert",
                 "last_seen": now,
+                "invalid_cached": False,
             }
             continue
         if is_new or changed:
@@ -343,6 +481,18 @@ def process_once(
             should_alert = match.relevant and (
                 is_new or not was_relevant or (changed and args.alert_updates)
             )
+            invalid_skip_until = None
+            if match.relevant:
+                forget_invalid_incident(state, incident.identity)
+            else:
+                invalid_skip_until = remember_invalid_incident(
+                    state,
+                    incident,
+                    row_fingerprint,
+                    match.reason,
+                    now_dt,
+                    invalid_skip_seconds,
+                )
             if should_alert:
                 core.emit_alert(session, incident, match, source_url, args)
                 alerts += 1
@@ -355,19 +505,33 @@ def process_once(
                 )
             records[incident.identity] = {
                 "fingerprint": incident.fingerprint,
+                "listing_fingerprint": row_fingerprint,
                 "detail_fingerprint": incident.detail_fingerprint,
                 "relevant": match.relevant,
                 "reason": match.reason,
                 "last_seen": now,
+                "invalid_cached": not match.relevant,
+                "invalid_skip_until": invalid_skip_until,
             }
         else:
             previous["last_seen"] = now
+            if previous.get("invalid_cached") and previous.get("reason"):
+                previous["invalid_skip_until"] = remember_invalid_incident(
+                    state,
+                    incident,
+                    row_fingerprint,
+                    str(previous["reason"]),
+                    now_dt,
+                    invalid_skip_seconds,
+                )
 
+    prune_invalid_cache(state, active_identities)
     LOG.info(
-        "Parsed %d Border incidents; discarded %d by AREA; fetched %d details; sent %d alerts",
+        "Parsed %d Border incidents; discarded %d by AREA; fetched %d details; skipped %d known non-alerting incidents; sent %d alerts",
         len(incidents),
         discarded,
         detail_fetches,
+        skipped_invalid,
         alerts,
     )
     core.prune_state(state, args.retention_hours)
