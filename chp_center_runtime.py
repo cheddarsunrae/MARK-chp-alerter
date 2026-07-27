@@ -6,6 +6,7 @@ runtime to fetch any CHP communications center selected in the GUI/profile.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -173,6 +174,34 @@ def _detailed_identity(self: detail.DetailedIncident) -> str:
     return f"{configured_center_code()}:{page_date}:{self.number}"
 
 
+def _summary_signature(summary: detail.DetailedIncident) -> str:
+    """Return a stable listing-row signature that ignores the page refresh time."""
+    data = asdict(summary)
+    data.pop("page_updated", None)
+    data.pop("details", None)
+    canonical = json.dumps(data, sort_keys=True, ensure_ascii=True)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _safe_skip_detail_fetch(previous: dict[str, Any] | None, summary_signature: str) -> bool:
+    """Return True when an unchanged, previously outside-boundary call can be skipped."""
+    return bool(
+        previous
+        and previous.get("skip_detail_fetch")
+        and previous.get("summary_signature") == summary_signature
+    )
+
+
+def _should_skip_future_details(match: core.MatchResult) -> bool:
+    """Only cache geography-based rejections, never boring in-area call types."""
+    reason = (match.reason or "").casefold()
+    return bool(
+        not match.relevant
+        and "outside" in reason
+        and "within boundary buffer" not in reason
+    )
+
+
 def process_once(
     session: requests.Session,
     state: dict[str, Any],
@@ -184,13 +213,26 @@ def process_once(
     records: dict[str, Any] = state.setdefault("incidents", {})
     first_run = not records
     now = datetime.now(timezone.utc).isoformat()
-    alerts = discarded = detail_fetches = 0
+    alerts = discarded = detail_fetches = cached_skips = 0
 
     for summary in incidents:
         if detail.is_discarded_area(summary.area):
             discarded += 1
             detail.LOG.debug("Discarded incident %s immediately by AREA=%s", summary.number, summary.area)
             continue
+
+        summary_signature = _summary_signature(summary)
+        previous = records.get(summary.identity)
+        if _safe_skip_detail_fetch(previous, summary_signature):
+            previous["last_seen"] = now
+            cached_skips += 1
+            detail.LOG.debug(
+                "Skipped incident %s detail fetch using cached rejection: %s",
+                summary.number,
+                previous.get("reason", "previous nonmatch"),
+            )
+            continue
+
         incident = summary
         if summary.detail_postback:
             try:
@@ -232,8 +274,10 @@ def process_once(
             records[incident.identity] = {
                 "fingerprint": incident.fingerprint,
                 "detail_fingerprint": incident.detail_fingerprint,
+                "summary_signature": summary_signature,
                 "relevant": False,
                 "reason": "primed without alert",
+                "skip_detail_fetch": False,
                 "last_seen": now,
             }
             continue
@@ -263,19 +307,24 @@ def process_once(
             records[incident.identity] = {
                 "fingerprint": incident.fingerprint,
                 "detail_fingerprint": incident.detail_fingerprint,
+                "summary_signature": summary_signature,
                 "relevant": match.relevant,
                 "reason": match.reason,
+                "skip_detail_fetch": _should_skip_future_details(match),
                 "last_seen": now,
             }
         else:
             previous["last_seen"] = now
+            previous["summary_signature"] = summary_signature
 
     detail.LOG.info(
-        "Parsed %d %s incidents; discarded %d by AREA; fetched %d details; sent %d alerts",
+        "Parsed %d %s incidents; discarded %d by AREA; fetched %d details; "
+        "skipped %d cached outside-boundary nonmatches; sent %d alerts",
         len(incidents),
         configured_center_name(),
         discarded,
         detail_fetches,
+        cached_skips,
         alerts,
     )
     core.prune_state(state, args.retention_hours)
