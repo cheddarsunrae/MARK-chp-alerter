@@ -1,13 +1,29 @@
 .env
 *.env.local
+
+# Runtime/private operational data
+runtime/
 state.json
 geocode-cache.json
 *.state.json
+*.log
+*.jsonl
+
+# Build/release artifacts
+dist/
+releases/
+*.zip
+*.sha256
+*.manifest.json
+
+# Python/dev caches
 __pycache__/
 *.py[cod]
 .venv/
 venv/
 .pytest_cache/
+
+# Editor/OS files
 .vscode/
 .idea/
 .DS_Store
