@@ -25,7 +25,7 @@ import chp_detail_alert as detail
 import chp_jamul_alert as core
 
 
-DEFAULT_AREA_PREFIXES = ("BC", "El")
+DEFAULT_AREA_PREFIXES = ("Bo", "El")
 DEFAULT_TYPE_FRAGMENTS = (
     "Unk",
     "1140",
@@ -38,6 +38,27 @@ DEFAULT_TYPE_FRAGMENTS = (
     "un w",
     "Repo",
 )
+WILDCARDS = {"*", "all", "any"}
+AREA_PREFIX_ALIASES = {
+    "border": "Bo",
+    "bo": "Bo",
+    "bc": "Bo",  # migration compatibility for older beta configs
+    "bccc": "Bo",
+    "san diego county": "Bo",
+    "county": "Bo",
+    "san diego": "Sa",
+    "sd": "Sa",
+    "sa": "Sa",
+    "el cajon": "El",
+    "el": "El",
+    "oceanside": "Oc",
+    "oc": "Oc",
+    "temecula": "Te",
+    "te": "Te",
+}
+CENTER_REQUIRED_AREA_PREFIXES = {
+    "BCCC": ("Bo",),
+}
 
 TIME_PATTERN = re.compile(r"\d{1,2}:\d{2}(?::\d{2})?\s*[AP]M", re.I)
 LISTING_ROW_PATTERN = re.compile(
@@ -83,18 +104,54 @@ def split_config(value: str | None) -> tuple[str, ...]:
     )
 
 
+def _has_wildcard(values: tuple[str, ...]) -> bool:
+    return any(value.strip().casefold() in WILDCARDS for value in values)
+
+
+def _canonical_area_prefix(value: str) -> str:
+    stripped = value.strip()
+    folded = stripped.casefold()
+    if folded in WILDCARDS:
+        return "*"
+    alias = AREA_PREFIX_ALIASES.get(folded)
+    if alias:
+        return alias
+    if len(stripped) == 2:
+        return stripped[0].upper() + stripped[1].lower()
+    return stripped
+
+
+def _canonical_area_prefixes(values: tuple[str, ...]) -> tuple[str, ...]:
+    normalized: list[str] = []
+    for value in values:
+        prefix = _canonical_area_prefix(value)
+        if prefix == "*":
+            return ("*",)
+        if prefix and prefix not in normalized:
+            normalized.append(prefix)
+    return tuple(normalized)
+
+
+def required_area_prefixes() -> tuple[str, ...]:
+    center_code = os.getenv("CHP_ALERT_COMM_CENTER", "").strip().upper()
+    return CENTER_REQUIRED_AREA_PREFIXES.get(center_code, ())
+
+
 def configured_area_prefixes() -> tuple[str, ...]:
-    values = split_config(os.getenv("CHP_ALERT_AREA_PREFIXES"))
-    return values or DEFAULT_AREA_PREFIXES
+    values = _canonical_area_prefixes(split_config(os.getenv("CHP_ALERT_AREA_PREFIXES")) or DEFAULT_AREA_PREFIXES)
+    if _has_wildcard(values):
+        return values
+    required = _canonical_area_prefixes(required_area_prefixes())
+    merged = list(required)
+    for value in values:
+        if value not in merged:
+            merged.append(value)
+    return tuple(merged) or DEFAULT_AREA_PREFIXES
 
 
 def configured_type_fragments() -> tuple[str, ...]:
     values = split_config(os.getenv("CHP_ALERT_TYPE_FRAGMENTS"))
     return values or DEFAULT_TYPE_FRAGMENTS
-
-
-def _has_wildcard(values: tuple[str, ...]) -> bool:
-    return any(value.strip() == "*" for value in values)
 
 
 def matched_area_prefixes(area: str) -> tuple[str, ...]:
