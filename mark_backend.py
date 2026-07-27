@@ -19,6 +19,7 @@ import notification_runtime
 from service_area_runtime import ServiceAreaError, apply_to_core
 
 MINIMUM_POLL_INTERVAL_SECONDS = 30.0
+DEFAULT_BOUNDARY_BUFFER_METERS = 0.0
 ROOT = Path(__file__).resolve().parent
 LOG = logging.getLogger("mark.backend")
 DEFAULT_AREA_PREFIXES = ("BC", "El")
@@ -52,6 +53,7 @@ def validate_args(args: Any) -> None:
     try:
         providers = notification_runtime.configured_providers()
         notification_runtime.configured_policy()
+        configured_boundary_buffer_meters()
     except (TypeError, ValueError) as exc:
         raise SystemExit(str(exc)) from exc
     pushover_selected = "pushover" in providers or args.test_pushover
@@ -70,6 +72,31 @@ def validate_args(args: Any) -> None:
             raise SystemExit(
                 "PUSHOVER_EXPIRE_SECONDS must be between 1 and 10800"
             )
+
+
+def configured_boundary_buffer_meters() -> float:
+    """Return the configured near-boundary alert distance in metres."""
+    raw = os.getenv(
+        "CHP_ALERT_BOUNDARY_BUFFER_METERS",
+        str(int(DEFAULT_BOUNDARY_BUFFER_METERS)),
+    ).strip()
+    if not raw:
+        return DEFAULT_BOUNDARY_BUFFER_METERS
+    try:
+        value = float(raw)
+    except ValueError as exc:
+        raise ValueError("CHP_ALERT_BOUNDARY_BUFFER_METERS must be a number of metres") from exc
+    if value < 0:
+        raise ValueError("CHP_ALERT_BOUNDARY_BUFFER_METERS cannot be negative")
+    return value
+
+
+def format_distance(meters: float) -> str:
+    """Format a distance for operator-facing logs in metric plus miles."""
+    miles = meters / 1609.344
+    if meters >= 1000:
+        return f"{meters / 1000:.2f} km / {miles:.2f} mi"
+    return f"{meters:.0f} m / {miles:.2f} mi"
 
 
 def _service_area_reason_label() -> str:
@@ -91,7 +118,10 @@ def _service_area_reason_label() -> str:
     return f"{raw} service-area polygon"
 
 
-def install_generic_coordinate_match(label: str) -> None:
+def install_generic_coordinate_match(
+    label: str,
+    boundary_buffer_meters: float = DEFAULT_BOUNDARY_BUFFER_METERS,
+) -> None:
     """Patch legacy coordinate matching so logs use the active map label."""
 
     def coordinate_match(coordinates: tuple[float, float]) -> Any:
@@ -115,9 +145,30 @@ def install_generic_coordinate_match(label: str) -> None:
             )
             for index in range(len(core.SERVICE_AREA_POLYGON))
         )
+        distance_meters = distance_km * 1000.0
+        if boundary_buffer_meters > 0 and distance_meters <= boundary_buffer_meters:
+            return core.MatchResult(
+                True,
+                (
+                    f"outside {label} but within boundary buffer "
+                    f"({format_distance(distance_meters)} from boundary; "
+                    f"buffer {format_distance(boundary_buffer_meters)})"
+                ),
+                "high",
+                latitude,
+                longitude,
+                distance_km,
+            )
+        if boundary_buffer_meters > 0:
+            reason = (
+                f"outside {label}; {format_distance(distance_meters)} from boundary "
+                f"exceeds buffer {format_distance(boundary_buffer_meters)}"
+            )
+        else:
+            reason = f"outside {label}"
         return core.MatchResult(
             False,
-            f"outside {label}",
+            reason,
             "high",
             latitude,
             longitude,
@@ -127,7 +178,7 @@ def install_generic_coordinate_match(label: str) -> None:
     core.coordinate_match = coordinate_match
 
 
-def configure_profile() -> str:
+def configure_profile() -> tuple[str, float]:
     raw_map = os.getenv(
         "CHP_ALERT_SERVICE_AREA_FILE",
         "service_area.geojson",
@@ -170,12 +221,13 @@ def configure_profile() -> str:
 
     profile = os.getenv("CHP_ALERT_PROFILE", "").strip() or "custom"
     label = _service_area_reason_label()
+    boundary_buffer_meters = configured_boundary_buffer_meters()
     providers = notification_runtime.configured_providers()
     policy = notification_runtime.configured_policy()
     LOG.info(
         "Loaded MARK profile %s: center=%s (%s) map=%s vertices=%d "
         "area_prefixes=%s type_fragments=%s location_source=CHP-detail-Lat/Lon "
-        "service_area_label=%s providers=%s severity=%s delivery=%s",
+        "service_area_label=%s boundary_buffer=%s providers=%s severity=%s delivery=%s",
         profile,
         chp_center_runtime.configured_center_name(),
         chp_center_runtime.configured_center_code(),
@@ -184,11 +236,12 @@ def configure_profile() -> str:
         ", ".join(area_prefixes),
         ", ".join(type_fragments),
         label,
+        format_distance(boundary_buffer_meters) if boundary_buffer_meters else "disabled",
         ",".join(providers) or "none",
         policy.severity,
         policy.delivery_mode,
     )
-    return label
+    return label, boundary_buffer_meters
 
 
 def main(argv: Iterable[str] | None = None) -> int:
@@ -199,8 +252,8 @@ def main(argv: Iterable[str] | None = None) -> int:
     mark_filter_runtime.install()
     mark_postback_runtime.install()
     notification_runtime.install()
-    label = configure_profile()
-    install_generic_coordinate_match(label)
+    label, boundary_buffer_meters = configure_profile()
+    install_generic_coordinate_match(label, boundary_buffer_meters)
     return detail.main(argv)
 
 
