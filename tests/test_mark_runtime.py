@@ -130,8 +130,10 @@ class DetailParserTests(unittest.TestCase):
 class FastFilterTests(unittest.TestCase):
     def test_station_36_area_prefix_defaults(self) -> None:
         with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("CHP_ALERT_COMM_CENTER", None)
             os.environ.pop("CHP_ALERT_AREA_PREFIXES", None)
-            self.assertTrue(area_matches("BC"))
+            self.assertEqual(configured_area_prefixes(), ("Bo", "El"))
+            self.assertTrue(area_matches("Border"))
             self.assertTrue(area_matches("El Cajon"))
             self.assertFalse(area_matches("San Diego"))
             self.assertFalse(area_matches("Temecula"))
