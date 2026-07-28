@@ -111,6 +111,8 @@ It includes:
 - **Reload Last Used**
 - **Load Center Test Map**
 - **Save Region/Map**
+- visible **Displayed map** status above the map pane
+- **Refit Map View** button
 
 The last saved value of `CHP_ALERT_SERVICE_AREA_FILE` is reloaded automatically on startup. Imported, generated, profile, and smoke-test maps are also tracked in:
 
@@ -119,6 +121,8 @@ runtime/recent_service_area_maps.json
 ```
 
 The saved-map picker scans the current map, recent-map list, repository root GeoJSON files, `test_maps/`, `profiles/maps/`, `runtime/test_maps/`, and `runtime/address_maps/`.
+
+When a service-area map is selected, `mark_region_reload_entry.py` loads the GeoJSON directly into the displayed map widget, clears stale waypoint-selection state, refits the view to the loaded polygon, updates the **Displayed map** status with the path and vertex count, and writes an explicit log entry.
 
 Center smoke-test boundaries are generated from:
 
@@ -257,7 +261,7 @@ chmod +x install-mark-linux.sh
 
 ## Important files
 
-- `mark_region_reload_entry.py` — current GUI entry: scrollable configuration, saved/recent map loader, import/reload controls, and automatic last-map reopening.
+- `mark_region_reload_entry.py` — current GUI entry: scrollable configuration, saved/recent map loader, direct map redraw/refit, displayed-map status, import/reload controls, and automatic last-map reopening.
 - `mark_region_entry.py` — region selector, visible map controls, AREA picker, address-box helper, first-run helper, versioned window title.
 - `mark_update_entry.py` — GUI update, notification-provider, and alert-policy controls.
 - `update_runtime.py` — safe Git update discovery and fast-forward installation.
