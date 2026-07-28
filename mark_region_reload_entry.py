@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""MARK Region GUI with explicit service-area map import/reload controls.
+"""MARK Region GUI with explicit service-area map loading controls.
 
 This layer sits above the region-aware GUI and fixes three usability problems:
 configuration controls can outgrow the middle pane, previously used maps need an
 obvious load path, and loaded maps must visibly replace the displayed map. It
-keeps the last saved map behavior while adding a scrollbar, a saved/recent map
-picker, and a displayed-map status line.
+keeps the last saved map behavior while adding a scrollbar, a recent-map picker,
+a displayed-map status line, and one primary file-picker action: Load Map.
 """
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ MAP_SEARCH_DIRS = (
 
 
 class ReloadingRegionMarkApp(RegionMarkApp):
-    """Add scrollable config, map import/reload UX, and last-map reopening."""
+    """Add scrollable config, one map-load path, and last-map reopening."""
 
     def __init__(self) -> None:
         self.saved_map_choices: dict[str, Path] = {}
@@ -125,8 +125,9 @@ class ReloadingRegionMarkApp(RegionMarkApp):
         panel = self._find_region_panel(frame)
         if panel is None:
             return
+        self._retitle_inherited_map_buttons(panel)
 
-        saved_box = ttk.LabelFrame(panel, text="Saved / Recent Service-Area Maps", padding=8)
+        saved_box = ttk.LabelFrame(panel, text="Recent Service-Area Maps", padding=8)
         children = panel.pack_slaves()
         # Keep this control near the top, directly after the center selector.
         before = children[2] if len(children) >= 3 else None
@@ -137,13 +138,16 @@ class ReloadingRegionMarkApp(RegionMarkApp):
 
         ttk.Label(
             saved_box,
-            text="The last saved map is loaded automatically on startup. Use this list to reopen imported, generated, profile, and smoke-test maps.",
+            text=(
+                "Use Load Map to choose a GeoJSON service-area file. "
+                "MARK remembers recent maps here and reloads the last saved map on startup."
+            ),
             wraplength=390,
         ).pack(anchor="w", fill="x")
 
         row_pick = ttk.Frame(saved_box)
         row_pick.pack(fill="x", pady=(7, 0))
-        ttk.Label(row_pick, text="Saved map").pack(side="left")
+        ttk.Label(row_pick, text="Recent map").pack(side="left")
         self.saved_map_combo = ttk.Combobox(
             row_pick,
             textvariable=self.vars["MARK_SAVED_MAP_DISPLAY"],
@@ -154,12 +158,20 @@ class ReloadingRegionMarkApp(RegionMarkApp):
 
         row_buttons = ttk.Frame(saved_box)
         row_buttons.pack(fill="x", pady=(7, 0))
-        ttk.Button(row_buttons, text="Load Selected Map", command=self.load_selected_saved_map).pack(side="left")
-        ttk.Button(row_buttons, text="Import Existing Map", command=self.import_existing_service_area_map).pack(side="left", padx=(6, 0))
-        ttk.Button(row_buttons, text="Reload Last Used", command=lambda: self.reload_last_saved_service_area_map(show_result=True)).pack(side="left", padx=(6, 0))
-        ttk.Button(row_buttons, text="Refresh List", command=self._refresh_saved_map_options).pack(side="left", padx=(6, 0))
+        ttk.Button(row_buttons, text="Load Map", command=self.load_service_area_map_from_file).pack(side="left")
+        ttk.Button(row_buttons, text="Refresh Recent List", command=self._refresh_saved_map_options).pack(side="left", padx=(6, 0))
 
         self._refresh_saved_map_options()
+
+    def _retitle_inherited_map_buttons(self, parent: tk.Widget) -> None:
+        """Make inherited file-picker buttons use the same Load Map action."""
+        for child in parent.winfo_children():
+            try:
+                if isinstance(child, ttk.Button) and str(child.cget("text")) == "Browse":
+                    child.configure(text="Load Map", command=self.load_service_area_map_from_file)
+            except tk.TclError:
+                pass
+            self._retitle_inherited_map_buttons(child)
 
     def _find_region_panel(self, parent: tk.Widget) -> ttk.LabelFrame | None:
         for child in parent.winfo_children():
@@ -373,17 +385,12 @@ class ReloadingRegionMarkApp(RegionMarkApp):
         return True
 
     def load_selected_saved_map(self) -> None:
-        self._refresh_saved_map_options()
-        label = self.vars["MARK_SAVED_MAP_DISPLAY"].get().strip()
-        path = self.saved_map_choices.get(label)
-        if path is None:
-            messagebox.showinfo(
-                "No saved map selected",
-                "Choose a saved/recent service-area map first, or click Import Existing Map.",
-                parent=self,
-            )
-            return
-        self._load_service_area_map_path(path, "Loaded saved service-area map")
+        """Compatibility fallback; user-facing loading now uses Load Map."""
+        messagebox.showinfo(
+            "Use Load Map",
+            "Use Load Map to choose the service-area GeoJSON file directly.",
+            parent=self,
+        )
 
     def reload_last_saved_service_area_map(self, show_result: bool = False) -> bool:
         path = self._last_saved_map_path()
@@ -391,7 +398,7 @@ class ReloadingRegionMarkApp(RegionMarkApp):
             if show_result:
                 messagebox.showinfo(
                     "No saved map",
-                    "No service-area map is saved yet. Use Import Existing Map, Load Center Test Map, or Build Address Box Map.",
+                    "No service-area map is saved yet. Use Load Map, Load Center Test Map, or Build Address Box Map.",
                     parent=self,
                 )
             return False
@@ -402,31 +409,26 @@ class ReloadingRegionMarkApp(RegionMarkApp):
             remember=True,
         )
 
-    def import_existing_service_area_map(self) -> None:
+    def load_service_area_map_from_file(self) -> None:
         current = self._last_saved_map_path()
         initial_dir = current.parent if current and current.parent.exists() else ROOT
         selected = filedialog.askopenfilename(
             parent=self,
-            title="Import existing MARK service-area GeoJSON map",
+            title="Load MARK service-area GeoJSON map",
             initialdir=str(initial_dir),
             filetypes=(("GeoJSON maps", "*.geojson *.json"), ("All files", "*.*")),
         )
         if not selected:
             return
-        self._load_service_area_map_path(Path(selected).expanduser(), "Imported service-area map")
+        self._load_service_area_map_path(Path(selected).expanduser(), "Loaded service-area map")
+
+    def import_existing_service_area_map(self) -> None:
+        """Compatibility alias for older callbacks; use Load Map wording in the GUI."""
+        self.load_service_area_map_from_file()
 
     def browse_service_area_map(self) -> None:
-        current = self._last_saved_map_path()
-        initial_dir = current.parent if current and current.parent.exists() else ROOT
-        selected = filedialog.askopenfilename(
-            parent=self,
-            title="Select MARK service-area GeoJSON",
-            initialdir=str(initial_dir),
-            filetypes=(("GeoJSON files", "*.geojson *.json"), ("All files", "*.*")),
-        )
-        if not selected:
-            return
-        self._load_service_area_map_path(Path(selected).expanduser(), "Browsed service-area map")
+        """Use the same working file-picker path for every map file control."""
+        self.load_service_area_map_from_file()
 
     def save_map(self, save_as: bool = False) -> None:
         super().save_map(save_as=save_as)
