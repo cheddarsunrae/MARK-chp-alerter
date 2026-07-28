@@ -10,7 +10,7 @@
 - Current version file: `VERSION`
 - Windows launcher: `start-chp-alerter.ps1`
 - macOS/Linux launcher: `start-chp-alerter.sh`
-- Current GUI entry point: `mark_region_entry.py`
+- Current GUI entry point: `mark_region_reload_entry.py`
 - Backend entry point: `mark_backend.py`
 - Minimum poll interval: **30 seconds**
 
@@ -24,15 +24,19 @@ MARK is supplemental awareness, not an official dispatch or CAD system.
 
 ## Current accepted state
 
-The Windows application previously launched and polled successfully after the final detail-postback correction. Later work added update checks, multi-provider notification configuration, generic service-area wording, CHP center selection, center smoke-test maps, release packaging, and a first-run helper. Those later GUI/runtime/release changes still require local acceptance after pull.
+The Windows application previously launched and polled successfully after the final detail-postback correction. Later work added update checks, multi-provider notification configuration, generic service-area wording, CHP center selection, center smoke-test maps, release packaging, a first-run helper, saved/recent map loading, automatic last-map reopening, and a scrollable configuration pane. Those later GUI/runtime/release changes still require local acceptance after pull.
 
 The Windows application provides:
 
 - MARK branding and versioned window title;
 - first-run beta helper;
+- scrollable middle Configuration column;
 - visible **CHP Region / Service-Area Map** panel;
 - CHP communications-center selector;
 - visible service-area map field and Browse button;
+- **Saved / Recent Service-Area Maps** picker;
+- **Load Selected Map**, **Import Existing Map**, and **Reload Last Used** controls;
+- automatic startup reload of the last saved `CHP_ALERT_SERVICE_AREA_FILE` map;
 - generated smoke-test map loading for all cataloged CHP centers;
 - monitor start/stop, dry poll, config/map reload;
 - update check and safe `git pull --ff-only` install controls;
@@ -43,8 +47,8 @@ The Windows application provides:
 - draggable waypoints;
 - anchored zone-extension workflow;
 - named profiles;
-- configurable AREA prefixes and Type fragments;
-- wildcard `*` smoke-test AREA and Type support;
+- configurable AREA prefixes and fixed default Type fragments;
+- wildcard `*` smoke-test AREA support;
 - conservative boundary simplification;
 - direct waypoint-to-waypoint cleanup;
 - GUI startup-error logging to `runtime/mark-gui-error.log`;
@@ -57,23 +61,24 @@ macOS and Linux install paths exist, but native acceptance testing is still requ
 
 ```text
 platform launcher
-  -> mark_region_entry.py
-      -> mark_update_entry.py
-      -> mark_gui_entry.SafeMarkApp
-          -> chp_gui.py + mark_app.py
-              -> mark_backend.py
-                  -> chp_center_runtime.install()
-                  -> mark_detail_runtime.install()
-                  -> mark_filter_runtime.install()
-                  -> mark_postback_runtime.install()
-                  -> notification_runtime.install()
-                  -> service_area_runtime.apply_to_core()
-                  -> mark_backend.install_generic_coordinate_match()
-                  -> chp_detail_alert.main()
-                      -> chp_jamul_alert.main()
+  -> mark_region_reload_entry.py
+      -> mark_region_entry.py
+          -> mark_update_entry.py
+          -> mark_gui_entry.SafeMarkApp
+              -> chp_gui.py + mark_app.py
+                  -> mark_backend.py
+                      -> chp_center_runtime.install()
+                      -> mark_detail_runtime.install()
+                      -> mark_filter_runtime.install()
+                      -> mark_postback_runtime.install()
+                      -> notification_runtime.install()
+                      -> service_area_runtime.apply_to_core()
+                      -> mark_backend.install_generic_coordinate_match()
+                      -> chp_detail_alert.main()
+                          -> chp_jamul_alert.main()
 ```
 
-Patch installation order matters. `chp_center_runtime.install()` must run before detail/filter patches so the selected center replaces the old Border-only fetch path. `mark_filter_runtime.install()` must run after `mark_detail_runtime.install()` so wildcard `*` filters override the default filter helpers. `mark_postback_runtime.install()` must run after `mark_detail_runtime.install()`. `install_generic_coordinate_match()` must run after the GeoJSON map has been applied so active polygon reasons use the loaded map/profile label instead of legacy Station 36 wording.
+Patch installation order matters. `chp_center_runtime.install()` must run before detail/filter patches so the selected center replaces the old Border-only fetch path. `mark_filter_runtime.install()` must run after `mark_detail_runtime.install()` so wildcard `*` AREA filters override the default filter helpers. `mark_postback_runtime.install()` must run after `mark_detail_runtime.install()`. `install_generic_coordinate_match()` must run after the GeoJSON map has been applied so active polygon reasons use the loaded map/profile label instead of legacy Station 36 wording.
 
 ## Release packaging
 
@@ -117,10 +122,11 @@ CHP_ALERT_COMM_CENTER=BCCC
 CHP_ALERT_COMM_CENTER_NAME=Border
 CHP_ALERT_SERVICE_AREA_FILE=service_area.geojson
 CHP_ALERT_SERVICE_AREA_LABEL=
+CHP_ALERT_BOUNDARY_BUFFER_METERS=0
 CHP_ALERT_EXISTING=0
 CHP_ALERT_UPDATES=0
 CHP_ALERT_PROFILE=
-CHP_ALERT_AREA_PREFIXES=BC,El
+CHP_ALERT_AREA_PREFIXES=Bo,El
 CHP_ALERT_TYPE_FRAGMENTS=Unk,1140,1141,Min,Maj,1179,1180,1178,un w,Repo
 NOTIFY_PROVIDERS=pushover
 ALERT_SEVERITY=critical
@@ -145,15 +151,16 @@ WEBHOOK_BEARER_TOKEN=
 
 `CHP_ALERT_SERVICE_AREA_LABEL` controls human-readable match text. Leave it blank for generic wording such as `outside active service-area polygon`, or set it to a station/agency/profile name.
 
-Never commit `.env`, credentials, runtime logs, state files, captured CHP pages, or private operational profile content.
+Never commit `.env`, credentials, runtime logs, state files, captured CHP pages, recent-map runtime lists, or private operational profile content.
 
 ## CHP center and smoke-test maps
 
 - Center catalog: `data/chp_communications_centers.json`
 - Smoke-test bbox catalog: `data/chp_center_smoke_boundaries.json`
 - Static San Diego smoke-test map: `test_maps/san_diego_region_smoke_test.geojson`
+- Recent/saved runtime map list: `runtime/recent_service_area_maps.json` (ignored runtime data)
 
-The GUI can generate a broad smoke-test map for any cataloged CHP center. Generated maps go to `runtime/test_maps/`, set `CHP_ALERT_AREA_PREFIXES=*`, and set `CHP_ALERT_TYPE_FRAGMENTS=*` so any listed incident can exercise the pipeline.
+The GUI can generate a broad smoke-test map for any cataloged CHP center. Generated maps go to `runtime/test_maps/` and set `CHP_ALERT_AREA_PREFIXES=*` so all listed AREA rows in the selected center can exercise the pipeline. Type fragments remain on the fixed default operational trigger set.
 
 Smoke-test maps are intentionally broad and must not be used as operational response boundaries.
 
@@ -194,7 +201,7 @@ outside Jamul Fire Station 36 service-area polygon
 MARK compares only the first two characters of the CHP `AREA` value, case-insensitively. Example Border-area profile:
 
 ```dotenv
-CHP_ALERT_AREA_PREFIXES=BC,El
+CHP_ALERT_AREA_PREFIXES=Bo,El
 ```
 
 `*`, `all`, or `any` matches all AREAs for smoke testing.
@@ -216,7 +223,7 @@ un w
 Repo
 ```
 
-`*`, `all`, or `any` matches all Types for smoke testing.
+The GUI intentionally keeps Type fragments on the fixed operational default set so smoke-test maps do not make every CAD category alertable.
 
 Detail-log `codes`, `contains_alert_code`, and `contains_11_82` are only the legacy 11-78 through 11-82 detector, not every Type/detail fragment match.
 
@@ -232,7 +239,9 @@ A live capture of incident `0047` proved the saved detail response was actually 
 
 ## Map workflow
 
-Use **CHP Region / Service-Area Map → Service-area map → Browse** and choose a `.geojson` or `.json` Polygon. GeoJSON stores `[longitude, latitude]`; MARK internally uses `(latitude, longitude)`.
+Use **CHP Region / Service-Area Map → Saved / Recent Service-Area Maps** to load a known map, **Import Existing Map** to import a `.geojson` or `.json` Polygon, or **Service-area map → Browse** to choose a file directly. GeoJSON stores `[longitude, latitude]`; MARK internally uses `(latitude, longitude)`.
+
+The last saved `CHP_ALERT_SERVICE_AREA_FILE` map reloads on startup. New imports, generated smoke-test maps, address-box maps, and map-editor Save As outputs are added to the recent map picker.
 
 **Simplify Boundary** removes near-collinear waypoints. Default tolerance is 25 m. Review before saving because excessive tolerance can move the operational boundary.
 
@@ -240,12 +249,13 @@ Use **CHP Region / Service-Area Map → Service-area map → Browse** and choose
 
 ## File map
 
-- `start-chp-alerter.ps1` — Windows venv, dependency, syntax preflight, region-aware GUI launch
+- `start-chp-alerter.ps1` — Windows venv, dependency, syntax preflight, current GUI launch
 - `start-chp-alerter.sh` — macOS/Linux launcher
 - `Install MARK - Windows.bat` — nontechnical Windows installer
 - `Install MARK - macOS.command` — nontechnical macOS installer
 - `install-mark-linux.sh` — Linux installer and desktop entry creator
-- `mark_region_entry.py` — current GUI entry: version title, first-run helper, center/map controls
+- `mark_region_reload_entry.py` — current GUI entry: scrollable configuration, saved/recent maps, import/reload controls, automatic last-map reopening
+- `mark_region_entry.py` — version title, first-run helper, center/map controls, AREA picker, address-box helper
 - `mark_update_entry.py` — update-aware GUI plus provider/policy controls
 - `update_runtime.py` — safe Git update discovery and fast-forward installation
 - `mark_gui_entry.py` — safe Tk startup, profile filter manager, simplification and direct-line UI
@@ -295,6 +305,7 @@ git pull
   .\update_runtime.py `
   .\mark_update_entry.py `
   .\mark_region_entry.py `
+  .\mark_region_reload_entry.py `
   .\mark_backend.py `
   .\chp_gui.py `
   .\mark_gui_entry.py `
@@ -338,10 +349,14 @@ Expected successful location reasons include `CHP detail Lat/Lon` and service-ar
 Confirm after this update:
 
 - GUI launches;
+- middle Configuration column has a vertical scrollbar and no clipped bottom controls;
 - window title shows version;
 - first-run helper appears once and can be dismissed;
 - **CHP Region / Service-Area Map** is visible at the top;
 - CHP center dropdown works;
+- **Saved / Recent Service-Area Maps** is visible near the top;
+- **Load Selected Map**, **Import Existing Map**, and **Reload Last Used** work;
+- last saved map reloads automatically on boot;
 - Load Center Test Map generates and loads a broad test map;
 - selected map loads;
 - Notification settings are visible;
@@ -349,14 +364,14 @@ Confirm after this update:
 - provider test button works for selected provider(s);
 - map/profile label changes active match wording;
 - monitor starts;
-- wildcard smoke-test filters work;
+- wildcard smoke-test AREA filters work;
 - normal AREA/Type filters work;
 - browser-faithful detail selection works;
 - active match reasons do not say Station 36 unless configured as the label.
 
 ## Remaining work
 
-1. Native Windows acceptance of the latest region-aware GUI, first-run helper, and release package.
+1. Native Windows acceptance of the latest scrollable config/saved-map GUI and release package.
 2. Native macOS GUI acceptance.
 3. Native Linux/Fedora GUI acceptance.
 4. Clean ZIP install test from `dist/MARK-<version>.zip` outside the dev checkout.
@@ -374,4 +389,4 @@ Confirm after this update:
 
 ## Continuation point
 
-The latest work creates a beta-distribution foundation: version file, release readme, release notes, release validation, release ZIP/checksum/manifest builder, hardened ignore rules, first-run helper, and updated manuals. Start the next thread by pulling `main`, running syntax/tests, running `scripts/validate_release.py`, building a ZIP with `scripts/build_release.py`, then testing the ZIP from a clean folder on Windows.
+The latest work makes the middle Configuration pane scrollable, adds **Saved / Recent Service-Area Maps**, tracks imported/generated/profile maps under ignored runtime state, and keeps boot-time last-map reload through `mark_region_reload_entry.py`. Start the next thread by pulling `main`, running syntax/tests, validating release packaging, and accepting the updated GUI on Windows.
