@@ -74,7 +74,7 @@ The release builder excludes `.env`, `runtime/`, `.venv/`, `.git/`, logs, state 
 The normal GUI entry point is:
 
 ```text
-mark_region_reload_entry.py
+mark_region_column_entry.py
 ```
 
 On first launch, the beta helper explains the recommended setup sequence, links to the Quick-Start guide, and offers shortcuts for notification settings and center smoke-test map loading. It stores its dismissed state under `runtime/`, which is intentionally not packaged.
@@ -98,7 +98,7 @@ ZIP-only installations receive a clear manual-update message. A future signed re
 
 ## CHP center and service-area maps
 
-The GUI exposes **CHP Region / Service-Area Map** at the top of the scrollable Configuration pane.
+The GUI exposes **CHP Region / Service-Area Map** at the top of the scrollable Configuration pane. The current launcher uses a column-safe wrapper that wraps long text, collapses two-column checkbox/button groups into one column, and moves explanatory text below controls so the middle panel does not need horizontal scrolling.
 
 It includes:
 
@@ -238,6 +238,7 @@ chmod +x install-mark-linux.sh
 
 ```powershell
 .\.venv\Scripts\python.exe -m py_compile `
+  .\mark_region_column_entry.py `
   .\mark_region_reload_entry.py `
   .\mark_region_entry.py `
   .\mark_backend.py `
@@ -258,7 +259,8 @@ chmod +x install-mark-linux.sh
 
 ## Important files
 
-- `mark_region_reload_entry.py` — current GUI entry: scrollable configuration, single **Load Map** file-picker path, recent-map display, displayed-map status, import/reload compatibility callbacks, and automatic last-map reopening.
+- `mark_region_column_entry.py` — current GUI entry: column-safe middle Configuration layout, scrollable configuration, single **Load Map** file-picker path, recent-map display, displayed-map status, and automatic last-map reopening.
+- `mark_region_reload_entry.py` — map-load/reload behavior layer used by the column-safe entry.
 - `mark_region_entry.py` — region selector, visible map controls, AREA picker, address-box helper, first-run helper, versioned window title.
 - `mark_update_entry.py` — GUI update, notification-provider, and alert-policy controls.
 - `update_runtime.py` — safe Git update discovery and fast-forward installation.
