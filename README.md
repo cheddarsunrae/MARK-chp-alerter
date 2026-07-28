@@ -104,25 +104,22 @@ It includes:
 
 - CHP communications-center selector
 - visible service-area map field
-- Browse button
-- **Saved / Recent Service-Area Maps** picker
-- **Load Selected Map**
-- **Import Existing Map**
-- **Reload Last Used**
+- **Load Map** file-picker button
+- recent service-area map display for reference
 - **Load Center Test Map**
 - **Save Region/Map**
 - visible **Displayed map** status above the map pane
 - **Refit Map View** button
 
-The last saved value of `CHP_ALERT_SERVICE_AREA_FILE` is reloaded automatically on startup. Imported, generated, profile, and smoke-test maps are also tracked in:
+The last saved value of `CHP_ALERT_SERVICE_AREA_FILE` is reloaded automatically on startup. User-loaded, generated, profile, and smoke-test maps are also tracked in:
 
 ```text
 runtime/recent_service_area_maps.json
 ```
 
-The saved-map picker scans the current map, recent-map list, repository root GeoJSON files, `test_maps/`, `profiles/maps/`, `runtime/test_maps/`, and `runtime/address_maps/`.
+The recent-map display scans the current map, recent-map list, repository root GeoJSON files, `test_maps/`, `profiles/maps/`, `runtime/test_maps/`, and `runtime/address_maps/`.
 
-When a service-area map is selected, `mark_region_reload_entry.py` loads the GeoJSON directly into the displayed map widget, clears stale waypoint-selection state, refits the view to the loaded polygon, updates the **Displayed map** status with the path and vertex count, and writes an explicit log entry.
+When **Load Map** is used, `mark_region_reload_entry.py` loads the chosen GeoJSON directly into the displayed map widget, clears stale waypoint-selection state, refits the view to the loaded polygon, updates the **Displayed map** status with the path and vertex count, saves the selected map path, and writes an explicit log entry. The old separate import/load-selected distinction was removed from the user-facing workflow.
 
 Center smoke-test boundaries are generated from:
 
@@ -261,7 +258,7 @@ chmod +x install-mark-linux.sh
 
 ## Important files
 
-- `mark_region_reload_entry.py` — current GUI entry: scrollable configuration, saved/recent map loader, direct map redraw/refit, displayed-map status, import/reload controls, and automatic last-map reopening.
+- `mark_region_reload_entry.py` — current GUI entry: scrollable configuration, single **Load Map** file-picker path, recent-map display, displayed-map status, import/reload compatibility callbacks, and automatic last-map reopening.
 - `mark_region_entry.py` — region selector, visible map controls, AREA picker, address-box helper, first-run helper, versioned window title.
 - `mark_update_entry.py` — GUI update, notification-provider, and alert-policy controls.
 - `update_runtime.py` — safe Git update discovery and fast-forward installation.
