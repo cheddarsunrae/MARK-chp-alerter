@@ -23,6 +23,7 @@ REQUIRED_FILES = (
     "install-mark-linux.sh",
     "start-chp-alerter.ps1",
     "start-chp-alerter.sh",
+    "mark_region_column_entry.py",
     "mark_region_reload_entry.py",
     "mark_region_entry.py",
     "mark_update_entry.py",
