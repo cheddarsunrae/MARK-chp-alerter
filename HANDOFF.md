@@ -24,7 +24,7 @@ MARK is supplemental awareness, not an official dispatch or CAD system.
 
 ## Current accepted state
 
-The Windows application previously launched and polled successfully after the final detail-postback correction. Later work added update checks, multi-provider notification configuration, generic service-area wording, CHP center selection, center smoke-test maps, release packaging, a first-run helper, saved/recent map loading, automatic last-map reopening, and a scrollable configuration pane. Those later GUI/runtime/release changes still require local acceptance after pull.
+The Windows application previously launched and polled successfully after the final detail-postback correction. Later work added update checks, multi-provider notification configuration, generic service-area wording, CHP center selection, center smoke-test maps, release packaging, a first-run helper, saved/recent map loading, automatic last-map reopening, a scrollable configuration pane, and direct displayed-map redraw/refit status. Those later GUI/runtime/release changes still require local acceptance after pull.
 
 The Windows application provides:
 
@@ -37,6 +37,8 @@ The Windows application provides:
 - **Saved / Recent Service-Area Maps** picker;
 - **Load Selected Map**, **Import Existing Map**, and **Reload Last Used** controls;
 - automatic startup reload of the last saved `CHP_ALERT_SERVICE_AREA_FILE` map;
+- direct map-widget redraw/refit when a saved, imported, browsed, generated, or startup map is loaded;
+- visible **Displayed map** path/vertex-count status and **Refit Map View** button;
 - generated smoke-test map loading for all cataloged CHP centers;
 - monitor start/stop, dry poll, config/map reload;
 - update check and safe `git pull --ff-only` install controls;
@@ -243,6 +245,8 @@ Use **CHP Region / Service-Area Map → Saved / Recent Service-Area Maps** to lo
 
 The last saved `CHP_ALERT_SERVICE_AREA_FILE` map reloads on startup. New imports, generated smoke-test maps, address-box maps, and map-editor Save As outputs are added to the recent map picker.
 
+When a map is loaded, `mark_region_reload_entry.py` directly parses the GeoJSON, sets `map_payload`/`map_points`, clears stale selected-waypoint/direct-line/extension state, redraws the map widget, refits the view to the loaded polygon, updates **Displayed map** with path and vertex count, and logs the exact loaded path.
+
 **Simplify Boundary** removes near-collinear waypoints. Default tolerance is 25 m. Review before saving because excessive tolerance can move the operational boundary.
 
 **Set Line Start** + **Remove Between Start + Selected** removes intermediate waypoints along the shorter path between two selected endpoints and replaces that section with a straight line.
@@ -254,7 +258,7 @@ The last saved `CHP_ALERT_SERVICE_AREA_FILE` map reloads on startup. New imports
 - `Install MARK - Windows.bat` — nontechnical Windows installer
 - `Install MARK - macOS.command` — nontechnical macOS installer
 - `install-mark-linux.sh` — Linux installer and desktop entry creator
-- `mark_region_reload_entry.py` — current GUI entry: scrollable configuration, saved/recent maps, import/reload controls, automatic last-map reopening
+- `mark_region_reload_entry.py` — current GUI entry: scrollable configuration, saved/recent maps, direct displayed-map redraw/refit, displayed-map status, import/reload controls, automatic last-map reopening
 - `mark_region_entry.py` — version title, first-run helper, center/map controls, AREA picker, address-box helper
 - `mark_update_entry.py` — update-aware GUI plus provider/policy controls
 - `update_runtime.py` — safe Git update discovery and fast-forward installation
@@ -357,6 +361,8 @@ Confirm after this update:
 - **Saved / Recent Service-Area Maps** is visible near the top;
 - **Load Selected Map**, **Import Existing Map**, and **Reload Last Used** work;
 - last saved map reloads automatically on boot;
+- loaded map visibly changes the map pane, refits the view, and updates **Displayed map** with the path and vertex count;
+- **Refit Map View** recenters the loaded polygon;
 - Load Center Test Map generates and loads a broad test map;
 - selected map loads;
 - Notification settings are visible;
@@ -371,7 +377,7 @@ Confirm after this update:
 
 ## Remaining work
 
-1. Native Windows acceptance of the latest scrollable config/saved-map GUI and release package.
+1. Native Windows acceptance of the latest scrollable config/saved-map/displayed-map GUI and release package.
 2. Native macOS GUI acceptance.
 3. Native Linux/Fedora GUI acceptance.
 4. Clean ZIP install test from `dist/MARK-<version>.zip` outside the dev checkout.
@@ -389,4 +395,4 @@ Confirm after this update:
 
 ## Continuation point
 
-The latest work makes the middle Configuration pane scrollable, adds **Saved / Recent Service-Area Maps**, tracks imported/generated/profile maps under ignored runtime state, and keeps boot-time last-map reload through `mark_region_reload_entry.py`. Start the next thread by pulling `main`, running syntax/tests, validating release packaging, and accepting the updated GUI on Windows.
+The latest work makes the middle Configuration pane scrollable, adds **Saved / Recent Service-Area Maps**, tracks imported/generated/profile maps under ignored runtime state, and forces selected maps to directly redraw/refit the displayed map widget with visible path/vertex-count status through `mark_region_reload_entry.py`. Start the next thread by pulling `main`, running syntax/tests, validating release packaging, and accepting the updated GUI on Windows.
