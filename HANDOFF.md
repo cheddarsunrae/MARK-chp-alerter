@@ -10,7 +10,7 @@
 - Current version file: `VERSION`
 - Windows launcher: `start-chp-alerter.ps1`
 - macOS/Linux launcher: `start-chp-alerter.sh`
-- Current GUI entry point: `mark_region_reload_entry.py`
+- Current GUI entry point: `mark_region_column_entry.py`
 - Backend entry point: `mark_backend.py`
 - Minimum poll interval: **30 seconds**
 
@@ -26,7 +26,7 @@ MARK is supplemental awareness, not an official dispatch, CAD, radio, paging, or
 
 The Windows application previously launched and polled successfully after the final detail-postback correction. Later work added update checks, multi-provider notification configuration, generic service-area wording, CHP center selection, center smoke-test maps, release packaging, a first-run helper, saved/recent map tracking, automatic last-map reopening, a scrollable configuration pane, displayed-map status, and a single user-facing **Load Map** workflow.
 
-Latest user-accepted finding: the old direct **Import Existing Map** file-picker path worked, while **Load Selected Map** did not reliably change the displayed map. The UI has therefore been simplified so the working file-picker path is now the primary **Load Map** action and the old separate import/load-selected distinction is removed from the visible workflow.
+Latest user finding: the middle Configuration panel had text/controls overrunning the right side with no horizontal scrollbar. The current launcher now uses `mark_region_column_entry.py`, a column-safe wrapper that wraps long labels, moves explanatory text under controls, collapses inherited two-column checkbox/button groups into single-column rows, and reduces Entry/Combobox minimum widths. The intended behavior is no horizontal scrolling and no hidden right-edge text.
 
 ## Current GUI map workflow
 
@@ -59,6 +59,7 @@ The Windows application provides:
 - MARK branding and versioned window title;
 - first-run beta helper;
 - scrollable middle Configuration column;
+- column-safe middle-panel formatting without a horizontal scrollbar;
 - visible **CHP Region / Service-Area Map** panel;
 - CHP communications-center selector;
 - visible service-area map field and **Load Map** button;
@@ -89,21 +90,22 @@ macOS and Linux install paths exist, but native acceptance testing is still requ
 
 ```text
 platform launcher
-  -> mark_region_reload_entry.py
-      -> mark_region_entry.py
-          -> mark_update_entry.py
-          -> mark_gui_entry.SafeMarkApp
-              -> chp_gui.py + mark_app.py
-                  -> mark_backend.py
-                      -> chp_center_runtime.install()
-                      -> mark_detail_runtime.install()
-                      -> mark_filter_runtime.install()
-                      -> mark_postback_runtime.install()
-                      -> notification_runtime.install()
-                      -> service_area_runtime.apply_to_core()
-                      -> mark_backend.install_generic_coordinate_match()
-                      -> chp_detail_alert.main()
-                          -> chp_jamul_alert.main()
+  -> mark_region_column_entry.py
+      -> mark_region_reload_entry.py
+          -> mark_region_entry.py
+              -> mark_update_entry.py
+              -> mark_gui_entry.SafeMarkApp
+                  -> chp_gui.py + mark_app.py
+                      -> mark_backend.py
+                          -> chp_center_runtime.install()
+                          -> mark_detail_runtime.install()
+                          -> mark_filter_runtime.install()
+                          -> mark_postback_runtime.install()
+                          -> notification_runtime.install()
+                          -> service_area_runtime.apply_to_core()
+                          -> mark_backend.install_generic_coordinate_match()
+                          -> chp_detail_alert.main()
+                              -> chp_jamul_alert.main()
 ```
 
 Patch installation order matters. `chp_center_runtime.install()` must run before detail/filter patches so the selected center replaces the old Border-only fetch path. `mark_filter_runtime.install()` must run after `mark_detail_runtime.install()` so wildcard `*` AREA filters override the default filter helpers. `mark_postback_runtime.install()` must run after `mark_detail_runtime.install()`. `install_generic_coordinate_match()` must run after the GeoJSON map has been applied so active polygon reasons use the loaded map/profile label instead of legacy Station 36 wording.
@@ -154,7 +156,8 @@ Never commit `.env`, credentials, runtime logs, state files, captured CHP pages,
 
 - `start-chp-alerter.ps1` — Windows venv, dependency, syntax preflight, current GUI launch.
 - `start-chp-alerter.sh` — macOS/Linux launcher.
-- `mark_region_reload_entry.py` — current GUI entry: scrollable configuration, single **Load Map** file-picker path, recent-map display, displayed-map status, import/reload compatibility callbacks, and automatic last-map reopening.
+- `mark_region_column_entry.py` — current GUI entry: column-safe middle-panel formatting, no horizontal overflow, and launcher target.
+- `mark_region_reload_entry.py` — map-load/reload behavior: scrollable configuration, single **Load Map** file-picker path, recent-map display, displayed-map status, import/reload compatibility callbacks, and automatic last-map reopening.
 - `mark_region_entry.py` — version title, first-run helper, center/map controls, AREA picker, address-box helper.
 - `mark_update_entry.py` — update-aware GUI plus provider/policy controls.
 - `mark_gui_entry.py` — safe Tk startup, profile filter manager, simplification and direct-line UI.
@@ -196,6 +199,7 @@ git pull
   .\mark_update_entry.py `
   .\mark_region_entry.py `
   .\mark_region_reload_entry.py `
+  .\mark_region_column_entry.py `
   .\mark_backend.py `
   .\chp_gui.py `
   .\mark_gui_entry.py `
@@ -240,6 +244,8 @@ Confirm after this update:
 
 - GUI launches;
 - middle Configuration column has a vertical scrollbar and no clipped bottom controls;
+- middle Configuration panel text wraps within the column, with no hidden right-edge text;
+- no horizontal scrollbar is needed;
 - **CHP Region / Service-Area Map** is visible near the top;
 - the old separate **Load Selected Map** / **Import Existing Map** workflow is no longer visible;
 - **Load Map** is visible and opens a file picker;
@@ -252,7 +258,7 @@ Confirm after this update:
 
 ## Remaining work
 
-1. Native Windows acceptance of the latest single-Load-Map GUI.
+1. Native Windows acceptance of the latest column-safe single-Load-Map GUI.
 2. Native macOS GUI acceptance.
 3. Native Linux/Fedora GUI acceptance.
 4. Clean ZIP install test from `dist/MARK-<version>.zip` outside the dev checkout.
@@ -270,4 +276,4 @@ Confirm after this update:
 
 ## Continuation point
 
-The latest work simplifies map loading to one reliable **Load Map** file-picker path, keeps recent maps as informational runtime state, preserves automatic startup reload of `CHP_ALERT_SERVICE_AREA_FILE`, and documents the accepted workflow in `docs/MAP_LOADING_WORKFLOW.md`. Start the next thread by pulling `main`, running syntax/tests, and accepting the updated GUI on Windows.
+The latest work changes launchers to `mark_region_column_entry.py`, a column-safe wrapper that keeps middle-panel content inside the visible column while preserving the accepted **Load Map** workflow. Start the next thread by pulling `main`, running syntax/tests, and accepting the updated GUI on Windows.
