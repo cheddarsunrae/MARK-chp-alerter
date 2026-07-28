@@ -21,4 +21,4 @@ if [[ ! -f .env ]]; then
   cp .env.example .env
 fi
 
-exec "$PYTHON" "$ROOT/mark_region_reload_entry.py"
+exec "$PYTHON" "$ROOT/mark_region_column_entry.py"
