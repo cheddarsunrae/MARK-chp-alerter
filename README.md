@@ -74,7 +74,7 @@ The release builder excludes `.env`, `runtime/`, `.venv/`, `.git/`, logs, state 
 The normal GUI entry point is:
 
 ```text
-mark_region_entry.py
+mark_region_reload_entry.py
 ```
 
 On first launch, the beta helper explains the recommended setup sequence, links to the Quick-Start guide, and offers shortcuts for notification settings and center smoke-test map loading. It stores its dismissed state under `runtime/`, which is intentionally not packaged.
@@ -96,17 +96,29 @@ Automatic installation is intentionally conservative:
 
 ZIP-only installations receive a clear manual-update message. A future signed release-package channel is still needed for fully automatic updates on non-Git installations.
 
-## CHP center and smoke-test maps
+## CHP center and service-area maps
 
-The GUI exposes **CHP Region / Service-Area Map** at the top of the Configuration pane.
+The GUI exposes **CHP Region / Service-Area Map** at the top of the scrollable Configuration pane.
 
 It includes:
 
 - CHP communications-center selector
 - visible service-area map field
 - Browse button
+- **Saved / Recent Service-Area Maps** picker
+- **Load Selected Map**
+- **Import Existing Map**
+- **Reload Last Used**
 - **Load Center Test Map**
 - **Save Region/Map**
+
+The last saved value of `CHP_ALERT_SERVICE_AREA_FILE` is reloaded automatically on startup. Imported, generated, profile, and smoke-test maps are also tracked in:
+
+```text
+runtime/recent_service_area_maps.json
+```
+
+The saved-map picker scans the current map, recent-map list, repository root GeoJSON files, `test_maps/`, `profiles/maps/`, `runtime/test_maps/`, and `runtime/address_maps/`.
 
 Center smoke-test boundaries are generated from:
 
@@ -114,13 +126,13 @@ Center smoke-test boundaries are generated from:
 data/chp_center_smoke_boundaries.json
 ```
 
-Generated maps are written under:
+Generated smoke-test maps are written under:
 
 ```text
 runtime/test_maps/
 ```
 
-Smoke-test maps set `CHP_ALERT_AREA_PREFIXES=*` and `CHP_ALERT_TYPE_FRAGMENTS=*` so any listed incident in the selected center can validate the polling/detail/alert pipeline. They are intentionally broad and must not be used as operational service-area boundaries.
+Smoke-test maps set `CHP_ALERT_AREA_PREFIXES=*` so all listed AREA rows in the selected center can validate the polling/detail/alert pipeline. Alert Type fragments remain on the fixed default operational trigger set. Smoke-test maps are intentionally broad and must not be used as operational service-area boundaries.
 
 ## Notification runtime and GUI controls
 
@@ -179,7 +191,7 @@ Only the first two characters of the CHP `AREA` value are compared, case-insensi
 Example Border-area profile:
 
 ```dotenv
-CHP_ALERT_AREA_PREFIXES=BC,El
+CHP_ALERT_AREA_PREFIXES=Bo,El
 ```
 
 ### Type-fragment search
@@ -188,7 +200,7 @@ CHP_ALERT_AREA_PREFIXES=BC,El
 CHP_ALERT_TYPE_FRAGMENTS=Unk,1140,1141,Min,Maj,1179,1180,1178,un w,Repo
 ```
 
-`*` means all Types.
+The GUI keeps Type fragments on the fixed operational default set to avoid making every CAD category alertable during a smoke test.
 
 ### Browser-faithful detail retrieval
 
@@ -225,6 +237,7 @@ chmod +x install-mark-linux.sh
 
 ```powershell
 .\.venv\Scripts\python.exe -m py_compile `
+  .\mark_region_reload_entry.py `
   .\mark_region_entry.py `
   .\mark_backend.py `
   .\notification_runtime.py `
@@ -244,7 +257,8 @@ chmod +x install-mark-linux.sh
 
 ## Important files
 
-- `mark_region_entry.py` — current GUI entry: region selector, visible map controls, first-run helper, versioned window title.
+- `mark_region_reload_entry.py` — current GUI entry: scrollable configuration, saved/recent map loader, import/reload controls, and automatic last-map reopening.
+- `mark_region_entry.py` — region selector, visible map controls, AREA picker, address-box helper, first-run helper, versioned window title.
 - `mark_update_entry.py` — GUI update, notification-provider, and alert-policy controls.
 - `update_runtime.py` — safe Git update discovery and fast-forward installation.
 - `mark_gui_entry.py` — safe GUI entry, profiles, filters, simplification, and direct waypoint cleanup.
@@ -258,4 +272,3 @@ chmod +x install-mark-linux.sh
 - `scripts/validate_release.py` — release preflight validation.
 - `scripts/build_release.py` — clean release ZIP, manifest, and checksum builder.
 - `test_maps/san_diego_region_smoke_test.geojson` — broad static test-only map.
-- `HANDOFF.md` — canonical continuation guide.
