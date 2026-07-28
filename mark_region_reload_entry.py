@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """MARK Region GUI with explicit service-area map import/reload controls.
 
-This layer sits above the region-aware GUI and fixes two usability problems:
-configuration controls can outgrow the middle pane, and previously used maps need
-an obvious load path. It keeps the last saved map behavior while adding a
-scrollbar and a saved/recent map picker.
+This layer sits above the region-aware GUI and fixes three usability problems:
+configuration controls can outgrow the middle pane, previously used maps need an
+obvious load path, and loaded maps must visibly replace the displayed map. It
+keeps the last saved map behavior while adding a scrollbar, a saved/recent map
+picker, and a displayed-map status line.
 """
 from __future__ import annotations
 
@@ -33,6 +34,7 @@ class ReloadingRegionMarkApp(RegionMarkApp):
     def __init__(self) -> None:
         self.saved_map_choices: dict[str, Path] = {}
         self.saved_map_combo: ttk.Combobox | None = None
+        self.displayed_map_status_text: tk.StringVar | None = None
         super().__init__()
 
     def _ensure_region_vars(self) -> None:
@@ -91,6 +93,27 @@ class ReloadingRegionMarkApp(RegionMarkApp):
 
         super()._build_config(content)
         refresh_scroll_region()
+
+    def _build_map(self, frame: ttk.Frame) -> None:
+        """Build the inherited map editor and add a visible displayed-map status."""
+        super()._build_map(frame)
+
+        status_bar = ttk.Frame(frame, style="Panel.TFrame")
+        self.displayed_map_status_text = tk.StringVar(value="Displayed map: not loaded yet")
+        ttk.Label(
+            status_bar,
+            textvariable=self.displayed_map_status_text,
+            style="PanelHead.TLabel",
+            wraplength=650,
+        ).pack(side="left", fill="x", expand=True)
+        ttk.Button(status_bar, text="Refit Map View", command=self.refit_displayed_map).pack(side="right", padx=(8, 0))
+
+        children = frame.pack_slaves()
+        before = children[1] if len(children) >= 2 else None
+        if before is not None:
+            status_bar.pack(fill="x", pady=(6, 0), before=before)
+        else:
+            status_bar.pack(fill="x", pady=(6, 0))
 
     def load_configuration(self) -> None:
         super().load_configuration()
@@ -258,25 +281,93 @@ class ReloadingRegionMarkApp(RegionMarkApp):
         elif labels:
             self.vars["MARK_SAVED_MAP_DISPLAY"].set(labels[0])
 
-    def _load_service_area_map_path(self, path: Path, action: str) -> bool:
+    def _set_displayed_map_status(self, path: Path, vertices: int, action: str) -> None:
+        label = self._map_display_label(path)
+        text = f"Displayed map: {label} • {vertices} vertices • {action}"
+        if self.displayed_map_status_text is not None:
+            self.displayed_map_status_text.set(text)
+
+    def _reset_map_editing_state_for_new_map(self) -> None:
+        if hasattr(self, "direct_line_start_index"):
+            self.direct_line_start_index = None
+        if hasattr(self, "_refresh_direct_line_status"):
+            self._refresh_direct_line_status()
+        if hasattr(self, "selected_vertex_index"):
+            self.selected_vertex_index = None
+        if hasattr(self, "cancel_extension"):
+            self.cancel_extension()
+        if hasattr(self, "anchor_status"):
+            self.anchor_status.configure(text="Anchor: none")
+
+    def _display_service_area_map_path(
+        self,
+        path: Path,
+        action: str,
+        *,
+        show_result: bool = False,
+        remember: bool = True,
+    ) -> bool:
+        """Load a GeoJSON file directly into the map widget and refit the display."""
         normalized = self._normalize_path(path)
         if not normalized.exists():
-            messagebox.showwarning(
-                "Map not found",
-                f"The selected service-area map does not exist:\n{normalized}",
-                parent=self,
-            )
+            message = f"The selected service-area map does not exist:\n{normalized}"
+            if show_result:
+                messagebox.showwarning("Map not found", message, parent=self)
+            else:
+                self.append_log(f"Map not found: {normalized}")
             return False
+
         try:
+            payload, points = mark_app.load_polygon(normalized)
             self.vars["CHP_ALERT_SERVICE_AREA_FILE"].set(str(normalized))
             self.map_path = normalized
-            self.reload_map(prompt=False)
-            self._remember_service_area_map(normalized)
+            self.map_payload = payload
+            self.map_points = points
+            self._reset_map_editing_state_for_new_map()
+            self._draw_polygon(True)
+            self.update_idletasks()
+
+            if remember:
+                self._remember_service_area_map(normalized)
             self._refresh_saved_map_options()
             self._refresh_region_summary()
-            self.append_log(f"{action}: {normalized}")
+            self._set_displayed_map_status(normalized, len(points), action)
+            self.append_log(f"{action}: {normalized} ({len(points)} vertices displayed)")
         except Exception as exc:  # pragma: no cover - Tk/map failures are surfaced to user
-            messagebox.showerror("Could not load map", str(exc), parent=self)
+            messagebox.showerror("Could not display map", str(exc), parent=self)
+            return False
+
+        if show_result:
+            messagebox.showinfo(
+                "Map displayed",
+                f"{action}:\n{normalized}\n\nDisplayed {len(points)} vertices and refit the map view.",
+                parent=self,
+            )
+        return True
+
+    def reload_map(self, prompt: bool = True) -> None:
+        """Reload the active service-area file and visibly redraw the map pane."""
+        path = self._last_saved_map_path()
+        if path is None:
+            path = self._normalize_path(Path(str(getattr(self, "map_path", mark_app.DEFAULT_MAP))))
+        loaded = self._display_service_area_map_path(path, "Reloaded active service-area map", remember=True)
+        if loaded and prompt and self.process and self.process.poll() is None:
+            messagebox.showinfo("Restart required", "Restart the monitor to apply the map.", parent=self)
+
+    def refit_displayed_map(self) -> None:
+        if not getattr(self, "map_points", None):
+            messagebox.showinfo("No map displayed", "Load a service-area map first.", parent=self)
+            return
+        try:
+            self._draw_polygon(True)
+            self.update_idletasks()
+            self._set_displayed_map_status(self.map_path, len(self.map_points), "refit map view")
+            self.append_log(f"Refit displayed map view: {self.map_path}")
+        except Exception as exc:
+            messagebox.showerror("Could not refit map", str(exc), parent=self)
+
+    def _load_service_area_map_path(self, path: Path, action: str) -> bool:
+        if not self._display_service_area_map_path(path, action, show_result=True, remember=True):
             return False
         self.save_region_map()
         return True
@@ -304,29 +395,12 @@ class ReloadingRegionMarkApp(RegionMarkApp):
                     parent=self,
                 )
             return False
-        if not path.exists():
-            if show_result:
-                messagebox.showwarning(
-                    "Saved map not found",
-                    f"The last saved service-area map does not exist:\n{path}\n\nUse Import Existing Map to select it again.",
-                    parent=self,
-                )
-            return False
-        try:
-            self.vars["CHP_ALERT_SERVICE_AREA_FILE"].set(str(path))
-            self.map_path = path
-            self.reload_map(prompt=False)
-            self._remember_service_area_map(path)
-            self._refresh_saved_map_options()
-            self._refresh_region_summary()
-            self.append_log(f"Reloaded last saved service-area map: {path}")
-            if show_result:
-                messagebox.showinfo("Map reloaded", f"Reloaded service-area map:\n{path}", parent=self)
-            return True
-        except Exception as exc:  # pragma: no cover - Tk/map failures are surfaced to user
-            if show_result:
-                messagebox.showerror("Could not reload map", str(exc), parent=self)
-            return False
+        return self._display_service_area_map_path(
+            path,
+            "Reloaded last saved service-area map",
+            show_result=show_result,
+            remember=True,
+        )
 
     def import_existing_service_area_map(self) -> None:
         current = self._last_saved_map_path()
@@ -342,19 +416,24 @@ class ReloadingRegionMarkApp(RegionMarkApp):
         self._load_service_area_map_path(Path(selected).expanduser(), "Imported service-area map")
 
     def browse_service_area_map(self) -> None:
-        before = str(self._last_saved_map_path() or "")
-        super().browse_service_area_map()
-        after = self._last_saved_map_path()
-        if after is None or str(after) == before:
+        current = self._last_saved_map_path()
+        initial_dir = current.parent if current and current.parent.exists() else ROOT
+        selected = filedialog.askopenfilename(
+            parent=self,
+            title="Select MARK service-area GeoJSON",
+            initialdir=str(initial_dir),
+            filetypes=(("GeoJSON files", "*.geojson *.json"), ("All files", "*.*")),
+        )
+        if not selected:
             return
-        self._remember_service_area_map(after)
-        self._refresh_saved_map_options()
-        self.save_region_map()
+        self._load_service_area_map_path(Path(selected).expanduser(), "Browsed service-area map")
 
     def save_map(self, save_as: bool = False) -> None:
         super().save_map(save_as=save_as)
         self._remember_service_area_map(self.map_path)
         self._refresh_saved_map_options()
+        if getattr(self, "map_path", None) and getattr(self, "map_points", None):
+            self._set_displayed_map_status(self.map_path, len(self.map_points), "saved map")
 
     def save_configuration(self, quiet: bool = False) -> bool:
         ok = super().save_configuration(quiet=quiet)
@@ -368,17 +447,14 @@ class ReloadingRegionMarkApp(RegionMarkApp):
         super().load_center_smoke_test_map()
         after = self._last_saved_map_path()
         if after is not None and str(after) != before:
-            self._remember_service_area_map(after)
-            self._refresh_saved_map_options()
+            self._display_service_area_map_path(after, "Displayed generated center smoke-test map", remember=True)
 
     def build_address_box_map(self) -> None:
         before = str(self._last_saved_map_path() or "")
         super().build_address_box_map()
         after = self._last_saved_map_path()
         if after is not None and str(after) != before:
-            self._remember_service_area_map(after)
-            self._refresh_saved_map_options()
-
+            self._display_service_area_map_path(after, "Displayed generated address-box map", remember=True)
 
 
 def main() -> int:
