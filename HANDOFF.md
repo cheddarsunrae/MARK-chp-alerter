@@ -26,7 +26,9 @@ MARK is supplemental awareness, not an official dispatch, CAD, radio, paging, or
 
 The Windows application previously launched and polled successfully after the final detail-postback correction. Later work added update checks, multi-provider notification configuration, generic service-area wording, CHP center selection, center smoke-test maps, release packaging, a first-run helper, saved/recent map tracking, automatic last-map reopening, a scrollable configuration pane, displayed-map status, and a single user-facing **Load Map** workflow.
 
-Latest user finding: the middle Configuration panel had text/controls overrunning the right side with no horizontal scrollbar. The current launcher now uses `mark_region_column_entry.py`, a column-safe wrapper that wraps long labels, moves explanatory text under controls, collapses inherited two-column checkbox/button groups into single-column rows, and reduces Entry/Combobox minimum widths. The intended behavior is no horizontal scrolling and no hidden right-edge text.
+Latest user finding: a live Pushover alert worked, but the alert text said `inside Address box: 4353 felton st, 92104 service-area polygon` after the user had loaded a different map. The likely issue was stale `CHP_ALERT_SERVICE_AREA_LABEL`, not necessarily the wrong polygon. `mark_region_column_entry.py` now updates `CHP_ALERT_SERVICE_AREA_LABEL` whenever **Load Map** loads a file, deriving the label from GeoJSON feature properties (`name`, `title`, `label`, `service_area`, `description`) or the file stem.
+
+Prior layout finding: the middle Configuration panel had text/controls overrunning the right side with no horizontal scrollbar. The current launcher uses `mark_region_column_entry.py`, a column-safe wrapper that wraps long labels, moves explanatory text under controls, collapses inherited two-column checkbox/button groups into single-column rows, and reduces Entry/Combobox minimum widths. The intended behavior is no horizontal scrolling and no hidden right-edge text.
 
 ## Current GUI map workflow
 
@@ -41,6 +43,8 @@ User-facing map loading should be:
 ```text
 Displayed map: <path> • <vertex count> vertices • Loaded service-area map
 ```
+
+6. Confirm alerts and live logs use the loaded map's current label, not an older address-box or smoke-test label.
 
 `mark_region_reload_entry.py` still remembers recent maps in ignored runtime state at:
 
@@ -63,6 +67,7 @@ The Windows application provides:
 - visible **CHP Region / Service-Area Map** panel;
 - CHP communications-center selector;
 - visible service-area map field and **Load Map** button;
+- automatic label sync when **Load Map** changes the service-area file;
 - recent service-area map display for reference;
 - automatic startup reload of the last saved `CHP_ALERT_SERVICE_AREA_FILE` map;
 - visible **Displayed map** status and **Refit Map View** button;
@@ -156,7 +161,7 @@ Never commit `.env`, credentials, runtime logs, state files, captured CHP pages,
 
 - `start-chp-alerter.ps1` — Windows venv, dependency, syntax preflight, current GUI launch.
 - `start-chp-alerter.sh` — macOS/Linux launcher.
-- `mark_region_column_entry.py` — current GUI entry: column-safe middle-panel formatting, no horizontal overflow, and launcher target.
+- `mark_region_column_entry.py` — current GUI entry: column-safe middle-panel formatting, no horizontal overflow, launcher target, and **Load Map** service-area label synchronization.
 - `mark_region_reload_entry.py` — map-load/reload behavior: scrollable configuration, single **Load Map** file-picker path, recent-map display, displayed-map status, import/reload compatibility callbacks, and automatic last-map reopening.
 - `mark_region_entry.py` — version title, first-run helper, center/map controls, AREA picker, address-box helper.
 - `mark_update_entry.py` — update-aware GUI plus provider/policy controls.
@@ -171,7 +176,7 @@ Never commit `.env`, credentials, runtime logs, state files, captured CHP pages,
 - `notification_runtime.py` — Pushover, ntfy, Gotify, and webhook adapters.
 - `service_area_runtime.py` — GeoJSON validation and polygon installation.
 - `geometry_utils.py` — near-collinear waypoint removal and direct-line cleanup helper.
-- `docs/MAP_LOADING_WORKFLOW.md` — current accepted map-loading UX.
+- `docs/MAP_LOADING_WORKFLOW.md` — current accepted map-loading UX and label-sync behavior.
 - `README.md` — operator/developer overview.
 - `HANDOFF.md` — this canonical continuation document.
 
@@ -251,6 +256,8 @@ Confirm after this update:
 - **Load Map** is visible and opens a file picker;
 - choosing a `.geojson` with **Load Map** visibly changes the right map pane;
 - the **Displayed map** status updates with the selected path and vertex count;
+- `CHP_ALERT_SERVICE_AREA_LABEL` changes to the loaded map's feature name/title/label or file stem;
+- a subsequent alert does not reuse an old `Address box:` label unless that is the loaded map;
 - the live log writes the selected path and vertex count;
 - **Refit Map View** refits the currently displayed polygon;
 - last saved map reloads automatically on boot;
@@ -258,7 +265,7 @@ Confirm after this update:
 
 ## Remaining work
 
-1. Native Windows acceptance of the latest column-safe single-Load-Map GUI.
+1. Native Windows acceptance of the latest column-safe single-Load-Map GUI and label sync.
 2. Native macOS GUI acceptance.
 3. Native Linux/Fedora GUI acceptance.
 4. Clean ZIP install test from `dist/MARK-<version>.zip` outside the dev checkout.
@@ -276,4 +283,4 @@ Confirm after this update:
 
 ## Continuation point
 
-The latest work changes launchers to `mark_region_column_entry.py`, a column-safe wrapper that keeps middle-panel content inside the visible column while preserving the accepted **Load Map** workflow. Start the next thread by pulling `main`, running syntax/tests, and accepting the updated GUI on Windows.
+The latest work keeps launchers on `mark_region_column_entry.py`, synchronizes `CHP_ALERT_SERVICE_AREA_LABEL` when **Load Map** changes the service-area file, and preserves the column-safe middle-panel layout. Start the next thread by pulling `main`, running syntax/tests, and accepting the updated GUI on Windows.
