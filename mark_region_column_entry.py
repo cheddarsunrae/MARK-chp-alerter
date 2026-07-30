@@ -3,18 +3,23 @@
 
 This wrapper keeps the current region/reload behavior but normalizes the middle
 Configuration pane so labels, explanations, checkboxes, and buttons stay inside
-the available column instead of disappearing off the right edge.
+the available column instead of disappearing off the right edge. It also keeps
+the human-readable service-area label synchronized with the map loaded through
+Load Map so notifications cannot reuse a stale label from an older map.
 """
 from __future__ import annotations
 
+from pathlib import Path
 import tkinter as tk
 from tkinter import ttk
 
+import mark_app
 import mark_gui_entry
 from mark_region_reload_entry import ReloadingRegionMarkApp
 
 WRAP_LENGTH = 320
 LONG_LABEL_THRESHOLD = 38
+LABEL_MAX_CHARS = 120
 
 
 class ColumnSafeRegionMarkApp(ReloadingRegionMarkApp):
@@ -26,6 +31,44 @@ class ColumnSafeRegionMarkApp(ReloadingRegionMarkApp):
         if panel is not None:
             self._make_column_safe(panel)
             self.after(120, lambda: self._make_column_safe(panel))
+
+    def _load_service_area_map_path(self, path: Path, action: str) -> bool:
+        """Load a map and keep the alert-facing service-area label in sync."""
+        normalized = self._normalize_path(path)
+        label = self._label_for_loaded_map(normalized)
+        if label:
+            self.vars["CHP_ALERT_SERVICE_AREA_LABEL"].set(label)
+        return super()._load_service_area_map_path(normalized, action)
+
+    def _label_for_loaded_map(self, path: Path) -> str:
+        """Return the best human-readable label for a newly loaded map file."""
+        try:
+            payload, _points = mark_app.load_polygon(path)
+        except Exception:
+            return self._fallback_map_label(path)
+
+        properties = self._first_feature_properties(payload)
+        for key in ("name", "title", "label", "service_area", "description"):
+            value = str(properties.get(key, "")).strip()
+            if value:
+                return value[:LABEL_MAX_CHARS]
+        return self._fallback_map_label(path)
+
+    def _first_feature_properties(self, payload: object) -> dict[str, object]:
+        if not isinstance(payload, dict):
+            return {}
+        if isinstance(payload.get("properties"), dict):
+            return payload["properties"]
+        features = payload.get("features")
+        if isinstance(features, list) and features:
+            first = features[0]
+            if isinstance(first, dict) and isinstance(first.get("properties"), dict):
+                return first["properties"]
+        return {}
+
+    def _fallback_map_label(self, path: Path) -> str:
+        stem = path.stem.replace("_", "-").strip() or "loaded service-area map"
+        return stem[:LABEL_MAX_CHARS]
 
     def _make_column_safe(self, widget: tk.Widget) -> None:
         """Apply conservative no-overflow rules to a widget subtree."""
