@@ -11,6 +11,7 @@ from pathlib import Path
 from tkinter import messagebox, simpledialog, ttk
 
 import mark_app
+import map_tiles
 from mark_app import COLORS, DEFAULT_MAP, MarkApp, load_polygon, replace_polygon
 
 ROOT = Path(__file__).resolve().parent
@@ -299,9 +300,17 @@ class BrandedMarkApp(MarkApp):
         ttk.Button(head, text="Save Map", command=self.save_map).pack(side="right", padx=3)
 
         if mark_app.tkintermapview:
+            settings = mark_app.parse_env(mark_app.ENV_FILE)
+            try:
+                source = map_tiles.tile_source_from_settings(settings)
+            except ValueError as exc:
+                self.append_log(f"Basemap setup needs attention: {exc}; using USGS Topo")
+                source = map_tiles.resolve_tile_source(map_tiles.DEFAULT_PROVIDER)
             self.map_widget = mark_app.tkintermapview.TkinterMapView(frame, corner_radius=0)
+            self.map_widget.set_tile_server(source.url, max_zoom=source.max_zoom)
             self.map_widget.pack(fill="both", expand=True, pady=(8, 6))
-            self.map_widget.set_tile_server("https://a.tile.openstreetmap.org/{z}/{x}/{y}.png", max_zoom=19)
+            self.basemap_attribution_label = ttk.Label(frame, text=source.attribution, style="PanelHead.TLabel")
+            self.basemap_attribution_label.pack(anchor="w")
             canvas = self.map_widget.canvas
             canvas.bind("<ButtonPress-1>", self._map_press, add="+")
             canvas.bind("<B1-Motion>", self._map_drag, add="+")
