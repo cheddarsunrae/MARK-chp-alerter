@@ -47,6 +47,7 @@ $preflightFiles = @(
     (Join-Path $PSScriptRoot 'mark_gui_entry.py'),
     (Join-Path $PSScriptRoot 'chp_gui.py'),
     (Join-Path $PSScriptRoot 'mark_app.py'),
+    (Join-Path $PSScriptRoot 'map_tiles.py'),
     (Join-Path $PSScriptRoot 'mark_backend.py')
 )
 & $consolePython -m py_compile @preflightFiles
