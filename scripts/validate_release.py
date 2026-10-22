@@ -29,6 +29,7 @@ REQUIRED_FILES = (
     "mark_update_entry.py",
     "mark_gui_entry.py",
     "mark_app.py",
+    "map_tiles.py",
     "mark_backend.py",
     "address_box_runtime.py",
     "chp_center_runtime.py",
