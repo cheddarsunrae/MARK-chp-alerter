@@ -95,6 +95,19 @@ Before real use:
 11. Confirm the test reaches the intended phone or group.
 12. Click **Start Monitor**.
 
+## Fixing a blank or blocked background map
+
+If the map shows **403 / osm.wiki/blocked**, your installation is still
+attempting to use OpenStreetMap's volunteer-run tile servers.
+
+Update MARK, reopen it, and in the map pane choose **Basemap → USGS Topo**,
+then click **Apply Basemap**. This map source requires no account or key.
+**USGS Imagery Topo** is also available. **MapTiler Streets** requires your
+own MapTiler API key and acceptance of the provider's terms.
+
+This only affects the roads/imagery drawn behind the boundary. It does not
+erase your saved GeoJSON area or change which CHP calls are eligible to alert.
+
 ## Normal daily use
 
 1. Open MARK.
