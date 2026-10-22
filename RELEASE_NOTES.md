@@ -1,5 +1,19 @@
 # MARK release notes
 
+## 0.9.0-beta.8
+
+Restore GUI basemaps after OpenStreetMap tile-policy HTTP 403 blocks.
+
+### Fixed
+
+- Removed hardcoded OSM volunteer tile URLs in both map-editor entry paths.
+- Default to USGS Topo, which needs no API key and provides map imagery for U.S. coverage.
+- Expose USGS Imagery Topo and optional keyed MapTiler Streets in the map pane.
+- Show visible provider attribution, maintain GUI settings in local `.env`, and
+  retain the existing saved GeoJSON boundary independently of the tile source.
+- Added unit tests for tile source selection, missing MapTiler keys, and
+  accidental fallback to volunteer OSM servers.
+
 ## 0.9.0-beta.7
 
 Service-area map import/reload UX update.
