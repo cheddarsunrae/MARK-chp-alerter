@@ -18,6 +18,7 @@ import tkinter as tk
 from datetime import datetime
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
+import map_tiles
 
 try:
     from PIL import Image, ImageTk
@@ -295,9 +296,16 @@ class MarkApp(tk.Tk):
         ttk.Button(head, text="Save Map", command=self.save_map).pack(side="right", padx=3)
 
         if tkintermapview:
+            settings = parse_env(ENV_FILE)
+            try:
+                source = map_tiles.tile_source_from_settings(settings)
+            except ValueError:
+                source = map_tiles.resolve_tile_source(map_tiles.DEFAULT_PROVIDER)
             self.map_widget = tkintermapview.TkinterMapView(frame, corner_radius=0)
+            self.map_widget.set_tile_server(source.url, max_zoom=source.max_zoom)
             self.map_widget.pack(fill="both", expand=True, pady=(8, 6))
-            self.map_widget.set_tile_server("https://a.tile.openstreetmap.org/{z}/{x}/{y}.png", max_zoom=19)
+            self.basemap_attribution_label = ttk.Label(frame, text=source.attribution, style="PanelHead.TLabel")
+            self.basemap_attribution_label.pack(anchor="w")
             self.map_widget.add_left_click_map_command(self._map_click)
             self.map_notice = ttk.Label(frame, text="Click the road map to add a vertex. Use Delete Last to remove the newest vertex.", style="PanelHead.TLabel")
         else:
