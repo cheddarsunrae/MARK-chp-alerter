@@ -8,6 +8,7 @@ from unittest.mock import patch
 import address_box_runtime
 import chp_jamul_alert as core
 import mark_backend
+import map_tiles
 import mark_filter_runtime
 from geometry_utils import remove_shorter_path_between, simplify_closed_polygon
 from mark_detail_runtime import (
@@ -179,6 +180,32 @@ class FastFilterTests(unittest.TestCase):
         with patch.dict(os.environ, {"CHP_ALERT_TYPE_FRAGMENTS": "*"}):
             self.assertFalse(mark_filter_runtime.type_matches("Traffic Hazard"))
             self.assertTrue(mark_filter_runtime.type_matches("Trfc Collision-1141 Enrt"))
+
+
+class MapTileSourcesTests(unittest.TestCase):
+    def test_usgs_topo_is_keyless_default_and_not_volunteer_osm(self) -> None:
+        source = map_tiles.tile_source_from_settings({})
+        self.assertEqual(source.provider, "USGS Topo")
+        self.assertIn("basemap.nationalmap.gov", source.url)
+        self.assertIn("/tile/{z}/{y}/{x}", source.url)
+        self.assertNotIn("tile.openstreetmap.org", source.url)
+        self.assertIn("Geological Survey", source.attribution)
+
+    def test_usgs_imagery_source_is_available_without_key(self) -> None:
+        source = map_tiles.resolve_tile_source("USGS Imagery Topo")
+        self.assertIn("USGSImageryTopo", source.url)
+        self.assertGreater(source.max_zoom, 0)
+
+    def test_maptiler_requires_user_key_and_encodes_it(self) -> None:
+        with self.assertRaises(ValueError):
+            map_tiles.resolve_tile_source("MapTiler Streets")
+        source = map_tiles.resolve_tile_source("MapTiler Streets", "test key")
+        self.assertIn("key=test%20key", source.url)
+        self.assertIn("OpenStreetMap contributors", source.attribution)
+
+    def test_unknown_map_provider_is_rejected(self) -> None:
+        with self.assertRaises(ValueError):
+            map_tiles.resolve_tile_source("Some unknown tile server")
 
 
 class BoundaryBufferTests(unittest.TestCase):
