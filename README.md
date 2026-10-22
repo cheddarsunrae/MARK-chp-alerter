@@ -135,6 +135,23 @@ runtime/test_maps/
 
 Smoke-test maps set `CHP_ALERT_AREA_PREFIXES=*` so all listed AREA rows in the selected center can validate the polling/detail/alert pipeline. Alert Type fragments remain on the fixed default operational trigger set. Smoke-test maps are intentionally broad and must not be used as operational service-area boundaries.
 
+## Background map tiles (OSM 403 fix)
+
+MARK no longer uses the volunteer-run `tile.openstreetmap.org` servers. The
+map editor defaults to **USGS Topo**, a keyless U.S. government basemap.
+Use the **Basemap** selector above the map pane to choose **USGS Topo** or
+**USGS Imagery Topo**, or **MapTiler Streets** with your own MapTiler API key.
+Click **Apply Basemap** to change the map immediately.
+
+The MapTiler key is saved only to the user's untracked `.env`; it is not
+included in source control or release ZIPs. Review the provider's plan and
+licensing terms for your use. The credits line remains visible under the map.
+
+Basemap changes do not alter GeoJSON polygons, AREA selections, CHP incident
+filters, or notification eligibility. If map tiles fail, the saved boundary
+still exists; switch back to USGS Topo and apply. This is not permission to
+retry OSM using a different hostname, subdomain, or spoofed user agent.
+
 ## Notification runtime and GUI controls
 
 `notification_runtime.py` provides a common provider interface for:
