@@ -55,8 +55,11 @@ REQUIRED_IN_PACKAGE = (
     "install-mark-linux.sh",
     "start-chp-alerter.ps1",
     "start-chp-alerter.sh",
+    "mark_region_column_entry.py",
+    "mark_region_reload_entry.py",
     "mark_region_entry.py",
     "mark_backend.py",
+    "map_tiles.py",
     "data/chp_communications_centers.json",
     "data/chp_center_smoke_boundaries.json",
 )
