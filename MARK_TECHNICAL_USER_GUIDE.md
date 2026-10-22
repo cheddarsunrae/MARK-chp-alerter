@@ -145,6 +145,36 @@ CHP_ALERT_UPDATES=0
 
 `CHP_ALERT_AREA_PREFIXES=*` is a smoke-test setting that searches all AREA rows in the selected CHP center. `CHP_ALERT_TYPE_FRAGMENTS` should remain at the fixed default trigger set; old beta configs that saved `*` for Type are normalized back to defaults so low-value categories such as Traffic Hazard do not become alert triggers.
 
+## GUI basemap providers and tile usage
+
+OpenStreetMap's volunteer `tile.openstreetmap.org` service enforces its
+tile usage policy and may return HTTP 403 when an application does not comply.
+MARK does not use that service as its basemap backend.
+
+```dotenv
+MARK_BASEMAP_PROVIDER=USGS Topo
+MARK_MAPTILER_API_KEY=
+```
+
+Supported `MARK_BASEMAP_PROVIDER` values:
+
+- `USGS Topo` (default): public U.S. topo basemap, no key.
+- `USGS Imagery Topo`: imagery/topography basemap, no key.
+- `MapTiler Streets`: raster street tiles; requires a user-owned API key
+  and an appropriate MapTiler account/plan.
+
+The GUI has a Basemap selector, optional masked MapTiler key entry, and
+**Apply Basemap** button. Provider credentials belong only in the local
+untracked `.env`. Visible provider credits are rendered below the map.
+The provider is a GUI concern and does not change saved GeoJSON vertices,
+incident coordinate matching, or alerts. No anonymous OSM tiles are fetched
+as a fallback if the configured provider cannot authenticate.
+
+Sources:
+- https://operations.osmfoundation.org/policies/tiles/
+- https://www.usgs.gov/faqs/what-are-terms-uselicensing-map-services-and-data-national-map
+- https://docs.maptiler.com/cloud/api/maps/
+
 ## CHP center and AREA selection
 
 The GUI exposes **CHP Region / Service-Area Map** at the top of Configuration.
