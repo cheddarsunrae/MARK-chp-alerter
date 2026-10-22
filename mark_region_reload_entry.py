@@ -15,6 +15,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
 import mark_app
+import map_tiles
 import mark_gui_entry
 from mark_region_entry import ROOT, RegionMarkApp
 
@@ -37,9 +38,19 @@ class ReloadingRegionMarkApp(RegionMarkApp):
         self.displayed_map_status_text: tk.StringVar | None = None
         super().__init__()
 
+    def _defaults(self) -> dict[str, str]:
+        values = super()._defaults()
+        values.update({
+            "MARK_BASEMAP_PROVIDER": map_tiles.DEFAULT_PROVIDER,
+            "MARK_MAPTILER_API_KEY": "",
+        })
+        return values
+
     def _ensure_region_vars(self) -> None:
         super()._ensure_region_vars()
         self.vars.setdefault("MARK_SAVED_MAP_DISPLAY", tk.StringVar(value=""))
+        self.vars.setdefault("MARK_BASEMAP_PROVIDER", tk.StringVar(value=map_tiles.DEFAULT_PROVIDER))
+        self.vars.setdefault("MARK_MAPTILER_API_KEY", tk.StringVar(value=""))
 
     def _build_config(self, frame: ttk.Frame) -> None:
         """Build the full inherited config panel inside a scrollable viewport."""
@@ -98,6 +109,38 @@ class ReloadingRegionMarkApp(RegionMarkApp):
         """Build the inherited map editor and add a visible displayed-map status."""
         super()._build_map(frame)
 
+        # This is a GUI-only background layer; it never changes the saved
+        # GeoJSON polygon or incident-coordinate decisions.
+        settings = mark_app.parse_env(mark_app.ENV_FILE)
+        self.vars["MARK_BASEMAP_PROVIDER"].set(
+            settings.get("MARK_BASEMAP_PROVIDER", map_tiles.DEFAULT_PROVIDER)
+        )
+        self.vars["MARK_MAPTILER_API_KEY"].set(settings.get("MARK_MAPTILER_API_KEY", ""))
+        source_row = ttk.Frame(frame, style="Panel.TFrame")
+        ttk.Label(source_row, text="Basemap").pack(side="left")
+        provider = ttk.Combobox(
+            source_row,
+            textvariable=self.vars["MARK_BASEMAP_PROVIDER"],
+            values=map_tiles.PROVIDERS,
+            state="readonly",
+            width=19,
+        )
+        provider.pack(side="left", padx=(6, 8))
+        ttk.Label(source_row, text="MapTiler key (optional)").pack(side="left")
+        ttk.Entry(
+            source_row,
+            textvariable=self.vars["MARK_MAPTILER_API_KEY"],
+            show="•",
+            width=18,
+        ).pack(side="left", padx=(6, 8))
+        ttk.Button(source_row, text="Apply Basemap", command=self.apply_basemap).pack(side="left")
+        children = frame.pack_slaves()
+        before = children[1] if len(children) >= 2 else None
+        if before is not None:
+            source_row.pack(fill="x", pady=(6, 0), before=before)
+        else:
+            source_row.pack(fill="x", pady=(6, 0))
+
         status_bar = ttk.Frame(frame, style="Panel.TFrame")
         self.displayed_map_status_text = tk.StringVar(value="Displayed map: not loaded yet")
         ttk.Label(
@@ -118,7 +161,37 @@ class ReloadingRegionMarkApp(RegionMarkApp):
     def load_configuration(self) -> None:
         super().load_configuration()
         self._refresh_saved_map_options()
+        self.apply_basemap(save=False, show_errors=False)
         self.after(0, self.reload_last_saved_service_area_map)
+
+    def apply_basemap(self, *, save: bool = True, show_errors: bool = True) -> bool:
+        """Apply an authorized tile service immediately without restarting CAD monitoring."""
+        try:
+            source = map_tiles.resolve_tile_source(
+                self.vars["MARK_BASEMAP_PROVIDER"].get(),
+                self.vars["MARK_MAPTILER_API_KEY"].get(),
+            )
+        except ValueError as exc:
+            if show_errors:
+                messagebox.showerror("Basemap configuration", str(exc), parent=self)
+            else:
+                self.append_log(f"Basemap configuration needs attention: {exc}")
+            return False
+        if not hasattr(self.map_widget, "set_tile_server"):
+            if show_errors:
+                messagebox.showwarning(
+                    "Basemap unavailable",
+                    "Install tkintermapview to display road tiles. Your GeoJSON map remains saved.",
+                    parent=self,
+                )
+            return False
+        self.map_widget.set_tile_server(source.url, max_zoom=source.max_zoom)
+        if hasattr(self, "basemap_attribution_label"):
+            self.basemap_attribution_label.configure(text=source.attribution)
+        self.append_log(f"Basemap selected: {source.provider}")
+        if save and not self.save_configuration(quiet=True):
+            return False
+        return True
 
     def _insert_region_map_panel(self, frame: ttk.Frame) -> None:
         super()._insert_region_map_panel(frame)
@@ -443,6 +516,17 @@ class ReloadingRegionMarkApp(RegionMarkApp):
             self._remember_service_area_map(self._last_saved_map_path())
             self._refresh_saved_map_options()
         return ok
+
+    def _write_full_env(self, values: dict[str, str]) -> None:
+        # The base writer owns the shared configuration; only append GUI basemap
+        # keys here. They are excluded from version control and release ZIPs.
+        super()._write_full_env(values)
+        with mark_app.ENV_FILE.open("a", encoding="utf-8") as handle:
+            handle.write("\n# GUI basemap provider (no OSM volunteer tile servers)\n")
+            handle.write(
+                f"MARK_BASEMAP_PROVIDER={values.get('MARK_BASEMAP_PROVIDER', map_tiles.DEFAULT_PROVIDER)}\n"
+            )
+            handle.write(f"MARK_MAPTILER_API_KEY={values.get('MARK_MAPTILER_API_KEY', '')}\n")
 
     def load_center_smoke_test_map(self) -> None:
         before = str(self._last_saved_map_path() or "")
